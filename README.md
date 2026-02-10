@@ -275,12 +275,6 @@ GITHUB_TOKEN=your_token shurl https://raw.githubusercontent.com/private/repo/mai
 
 Better: Create a wrapper script that adds auth headers.
 
-### How do I update shurl itself?
-```bash
-# Update using shurl (meta!)
-shurl --update gh:day50-dev/shurl/main/shurl /usr/local/bin/shurl
-```
-
 ### What if I get "command not found"?
 Ensure `~/.local/bin` is in your PATH:
 ```bash
