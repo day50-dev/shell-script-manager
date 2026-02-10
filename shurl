@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
-
-# shurl - download and execute shell scripts with GitHub shorthand support
+# shurl v1.4.0 - download and execute shell scripts with GitHub shorthand support
 # Usage: shurl <url> [args...]
 #        shurl gh:user/repo/file [args...]
 #        shurl --dry-run <url>     # Show what would be executed
 #        shurl --update <url>      # Force fresh download
 #        shurl --clear-cache
 #        shurl --version
-
 set -euo pipefail
 
 # Version
-VERSION="1.3.1"
+VERSION="1.4.0"
 
 # Detect OS and set cache directory
 detect_cache_dir() {
@@ -63,17 +61,37 @@ main() {
                 clear_cache
                 return
                 ;;
-            --dry-run|--dryrun|-n)
-                DRY_RUN=true
-                shift
-                ;;
-            --update|-u)
-                FORCE_UPDATE=true
-                shift
-                ;;
-            -q|--quiet)
-                QUIET=true
-                shift
+            -*)
+                # Handle combined short flags (e.g., -nu, -nuq)
+                if [[ "$1" =~ ^-[nuqv]+$ ]]; then
+                    [[ "$1" =~ n ]] && DRY_RUN=true
+                    [[ "$1" =~ u ]] && FORCE_UPDATE=true
+                    [[ "$1" =~ q ]] && QUIET=true
+                    if [[ "$1" =~ v ]]; then
+                        echo "shurl v$VERSION"
+                        return
+                    fi
+                    shift
+                else
+                    # Handle long flags
+                    case "$1" in
+                        --dry-run|--dryrun)
+                            DRY_RUN=true
+                            shift
+                            ;;
+                        --update)
+                            FORCE_UPDATE=true
+                            shift
+                            ;;
+                        --quiet)
+                            QUIET=true
+                            shift
+                            ;;
+                        *)
+                            error_exit "Unknown option: $1\n\nSee 'shurl --help' for usage."
+                            ;;
+                    esac
+                fi
                 ;;
             *)
                 break
@@ -82,8 +100,7 @@ main() {
     done
     
     if [[ $# -eq 0 ]]; then
-        show_help
-        exit 1
+        error_exit "No URL provided.\n\nUsage: shurl [OPTIONS] <url> [args...]\nSee 'shurl --help' for more information."
     fi
     
     local url="$1"
@@ -118,11 +135,13 @@ main() {
         if [[ "$DRY_RUN" == true ]]; then
             echo "[dry-run] Would download: $url" >&2
             echo "[dry-run] Would save to: $cached_file" >&2
+            # Download anyway for preview
+            echo "[dry-run] Downloading for preview..." >&2
+            download "$url" "$cached_file"
         else
             [[ "$QUIET" != true ]] && echo "Downloading: $url" >&2
             download "$url" "$cached_file"
         fi
-    # Removed the "Using cached version" message entirely
     fi
     
     if [[ "$DRY_RUN" == true ]]; then
@@ -149,7 +168,6 @@ main() {
     
     # Actually run the script
     if [[ ! -f "$cached_file" ]]; then
-        # This shouldn't happen, but just in case
         error_exit "Cache file not found: $cached_file"
     fi
     
@@ -158,12 +176,9 @@ main() {
         error_exit "Cached file is empty. Try: shurl --update '$url'"
     fi
     
-    # Check if it's a valid shell script
-    if ! head -n 1 "$cached_file" | grep -q -E "^#!.*(bash|sh|zsh|dash|ksh)"; then
-        # Check for shebang in first 2 lines (some scripts have blank first line)
-        if ! head -n 2 "$cached_file" | grep -q -E "^#!.*(bash|sh|zsh|dash|ksh)"; then
-            error_exit "Downloaded file is not a valid shell script (missing shebang).\nURL: $url\n\nEither:\n1. The URL points to a non-shell-script file\n2. The download failed/corrupted\n3. Try: shurl --update '$url'"
-        fi
+    # Check for shebang (warn if missing, but allow execution)
+    if ! head -n 2 "$cached_file" | grep -q -E "^#!"; then
+        [[ "$QUIET" != true ]] && echo "Warning: No shebang found, executing with default shell" >&2
     fi
     
     chmod +x "$cached_file"
@@ -171,7 +186,7 @@ main() {
 }
 
 error_exit() {
-    echo -e "shurl: error: $1" >&2
+    printf "shurl: error: %b\n" "$1" >&2
     exit 1
 }
 
@@ -183,12 +198,13 @@ get_cache_key() {
         echo "$url" | sha256sum | cut -d' ' -f1
     elif command -v shasum &>/dev/null; then
         echo "$url" | shasum -a 256 | cut -d' ' -f1
+    elif command -v md5sum &>/dev/null; then
+        echo "$url" | md5sum | cut -d' ' -f1
+    elif command -v md5 &>/dev/null; then
+        echo "$url" | md5 | cut -d' ' -f1
     else
-        # Fallback: use a simpler hash
-        echo "$url" | md5sum 2>/dev/null | cut -d' ' -f1 || \
-        echo "$url" | md5 2>/dev/null | cut -d' ' -f1 || \
-        # Last resort: use basename with timestamp
-        basename "$url" | tr -cd '[:alnum:]' | head -c 32
+        # Fallback: URL-safe encoding (escapes special chars)
+        echo "$url" | tr -c '[:alnum:]' '_' | head -c 200
     fi
 }
 
@@ -214,20 +230,21 @@ expand_github_shorthand() {
 download() {
     local url="$1"
     local dest="$2"
+    local temp_dest="${dest}.tmp.$$"  # Use PID for uniqueness (atomic write)
     
     # Try curl first, then wget
     if command -v curl &>/dev/null; then
         # Use -f to fail on 404, -L to follow redirects, -S to show errors
-        if ! curl -fLS "$url" -o "$dest" 2>/dev/null; then
+        if ! curl -fLS "$url" -o "$temp_dest" 2>/dev/null; then
             # Get HTTP status code for better error message
             local status_code
             status_code=$(curl -fsSL -w "%{http_code}" -o /dev/null "$url" 2>/dev/null || echo "unknown")
-            rm -f "$dest" 2>/dev/null
+            rm -f "$temp_dest" 2>/dev/null
             error_exit "Failed to download from '$url' (HTTP $status_code)\n\nPossible reasons:\n1. URL is incorrect\n2. File doesn't exist\n3. Network issue\n4. Server requires authentication"
         fi
     elif command -v wget &>/dev/null; then
-        if ! wget -qO "$dest" "$url" 2>/dev/null; then
-            rm -f "$dest" 2>/dev/null
+        if ! wget -qO "$temp_dest" "$url" 2>/dev/null; then
+            rm -f "$temp_dest" 2>/dev/null
             error_exit "Failed to download from '$url'\n\nPossible reasons:\n1. URL is incorrect\n2. File doesn't exist\n3. Network issue\n4. Server requires authentication"
         fi
     else
@@ -235,10 +252,13 @@ download() {
     fi
     
     # Check if download succeeded
-    if [[ ! -s "$dest" ]]; then
-        rm -f "$dest" 2>/dev/null
+    if [[ ! -s "$temp_dest" ]]; then
+        rm -f "$temp_dest" 2>/dev/null
         error_exit "Downloaded file is empty from '$url'\n\nThe server returned an empty response. This could mean:\n1. The file is actually empty\n2. The URL points to a directory listing (not raw file)\n3. Authentication is required\n4. Server error"
     fi
+    
+    # Atomic move to final destination
+    mv "$temp_dest" "$dest"
 }
 
 clear_cache() {
@@ -289,17 +309,21 @@ Options:
   -q, --quiet         Suppress non-error output
   --clear-cache       Clear the shurl cache
 
+Short flags can be combined: -nu, -nuq, etc.
+
 Examples:
   shurl https://example.com/script.sh
   shurl gh:user/repo/script.sh
-  shurl --update gh:user/repo/setup.sh          # Force fresh download
-  shurl --dry-run gh:user/repo/setup.sh         # Preview execution
-  shurl -q gh:user/repo/tool.sh                 # Quiet mode (no status messages)
+  shurl -u gh:user/repo/setup.sh                # Force fresh download
+  shurl -n gh:user/repo/setup.sh                # Preview execution
+  shurl -nu gh:user/repo/setup.sh               # Preview fresh download
+  shurl -q gh:user/repo/tool.sh                 # Quiet mode
   shurl --clear-cache
 
 GitHub shorthand:
   gh:user/repo/file           -> https://raw.githubusercontent.com/user/repo/main/file
   gh:user/repo@branch/file    -> https://raw.githubusercontent.com/user/repo/branch/file
+  gh:user/repo@v1.2.3/file    -> https://raw.githubusercontent.com/user/repo/v1.2.3/file
 
 Cache location:
   Linux:   ~/.cache/shurl
@@ -314,6 +338,10 @@ Tips:
   • Use -q when piping/parsing script output
   • Use --update when you need the latest version
   • Use --dry-run to preview before execution
+  • shurl executes scripts (doesn't source them)
+  • Variables/functions won't persist in your shell
+  • Use --update for self-modifying scripts to pick up changes
+
 EOF
 }
 
