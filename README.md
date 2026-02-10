@@ -202,31 +202,6 @@ shurl -n gh:external/vendor/install.sh  # Preview before running!
 ### Other Unix-like
 - Falls back to `~/.local/bin` and `~/.cache/shurl`
 
-## Feature Comparison
-
-| Feature | `curl | bash` | `shurl` |
-|---------|--------|--------|
-| Cache scripts | ❌ No | ✅ Yes |
-| GitHub shorthand | ❌ No | ✅ Yes |
-| Dry-run mode | ❌ No | ✅ Yes |
-| Force updates | ❌ No | ✅ Yes (`--update`) |
-| Safe execution | ❌ Risky | ✅ Safe |
-| Argument passing | ✅ Yes | ✅ Yes |
-| Cross-platform | ✅ Yes | ✅ Yes |
-
-### vs `npx`/`uvx`
-```bash
-# npx for JavaScript
-npx create-react-app my-app
-
-# uvx for Python
-uvx ruff check .
-
-# shurl for shell scripts
-shurl gh:someorg/cli-tool/init.sh my-project
-shurl --update gh:org/tool@latest/run.sh  # Get latest
-```
-
 ## Security & Safety
 
 ### Safety features
