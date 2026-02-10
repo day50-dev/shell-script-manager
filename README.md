@@ -1,4 +1,4 @@
-# shurl 
+# shurl 📦⚡
 
 **Like `npx` and `uvx`, but for shell scripts.**
 
@@ -16,18 +16,20 @@ Then `shurl` is the shell script equivalent.
 ## Quick Start
 
 ```bash
-# Install shurl
-curl -fsSL https://raw.githubusercontent.com/your-org/shurl/main/shurl | sudo tee /usr/local/bin/shurl >/dev/null
-sudo chmod +x /usr/local/bin/shurl
+# Install shurl (one-liner)
+curl -fsSL https://raw.githubusercontent.com/day50-dev/shurl/main/shurl | sudo tee /usr/local/bin/shurl >/dev/null && sudo chmod +x /usr/local/bin/shurl
+
+# Or install with shurl itself
+shurl gh:day50-dev/shurl/main/shurl /usr/local/bin/shurl
 
 # Run a script from any URL
 shurl https://example.com/install.sh
 
 # Use GitHub shorthand (like GitHub CLI)
-shurl gh:user/repo/script.sh
+shurl gh:day50-dev/shurl/examples/hello.sh
 
 # Pass arguments to the script
-shurl gh:docker/compose/contrib/completion/bash/docker-compose
+shurl gh:day50-dev/shurl/examples/hello.sh --name "World"
 ```
 
 ## Why shurl?
@@ -36,7 +38,7 @@ shurl gh:docker/compose/contrib/completion/bash/docker-compose
 |------|----------|---------|------------------------|
 | `npx` | JavaScript | Run npm packages | No (comes with npm) |
 | `uvx` | Python | Run Python tools | No (comes with uv) |
-| `shurl` | Shell | Run shell scripts | No (single binary) |
+| `shurl` | Shell | Run shell scripts | No (single bash script) |
 
 **Use cases:**
 - Quick installers: `shurl https://get.docker.com`
@@ -44,28 +46,34 @@ shurl gh:docker/compose/contrib/completion/bash/docker-compose
 - One-off automation tasks
 - Trying tools without permanent installation
 - CI/CD pipeline scripts
+- Running gists or pastebin scripts
 
 ## Installation
 
 ### Option 1: Direct install (recommended)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/your-org/shurl/main/shurl | sudo tee /usr/local/bin/shurl >/dev/null
+curl -fsSL https://raw.githubusercontent.com/day50-dev/shurl/main/shurl | sudo tee /usr/local/bin/shurl >/dev/null
 sudo chmod +x /usr/local/bin/shurl
 ```
 
 ### Option 2: Manual download
 ```bash
 # Download and install manually
-wget https://raw.githubusercontent.com/your-org/shurl/main/shurl
+wget https://raw.githubusercontent.com/day50-dev/shurl/main/shurl
 chmod +x shurl
 sudo mv shurl /usr/local/bin/
 ```
 
 ### Option 3: From source
 ```bash
-git clone https://github.com/your-org/shurl.git
+git clone https://github.com/day50-dev/shurl.git
 cd shurl
 sudo install shurl /usr/local/bin/
+```
+
+### Option 4: Using shurl itself (meta!)
+```bash
+shurl gh:day50-dev/shurl/main/shurl /usr/local/bin/shurl
 ```
 
 ## Usage
@@ -97,51 +105,50 @@ shurl gh:docker/compose/contrib/completion/bash/docker-compose
 
 ### Real-world examples
 ```bash
-# Docker install (example - use official docs)
-shurl https://get.docker.com
+# Try the example scripts in this repo
+shurl gh:day50-dev/shurl/examples/hello.sh
+shurl gh:day50-dev/shurl/examples/colors.sh
 
-# Homebrew install
-shurl https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh
-
-# Rust install
-shurl https://sh.rustup.rs
+# Common installers (hypothetical examples)
+shurl gh:someproject/installer/linux.sh
+shurl https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh
 
 # Development tools
-shurl gh:myscripts/dev-setup/ubuntu.sh
-shurl gh:company/tools@develop/deploy.sh --prod
+shurl gh:company/scripts/dev-setup.sh
+shurl gh:org/tools@develop/deploy.sh --env production
 ```
 
 ## How it works
 
-1. **Downloads** the script to a cache directory (`~/.cache/shurl/`)
-2. **Makes it executable** with `chmod +x`
-3. **Runs it** with any provided arguments
-4. **Caches** for future use (like `npx` caches packages)
-
-First run downloads, subsequent runs use the cached version.
+1. **Parses input**: Expands `gh:` shorthand to GitHub raw URLs
+2. **Creates cache key**: SHA256 hash of the URL for unique identification
+3. **Checks cache**: Looks in `~/.cache/shurl/` for existing script
+4. **Downloads if needed**: Uses `curl` or `wget` to fetch script
+5. **Makes executable**: `chmod +x` on the cached file
+6. **Executes**: Runs with provided arguments
 
 ## Features
 
 ### 🚀 **Speed**
 - Scripts are cached locally
-- Subsequent runs are instant
-- Parallel to `npx`/`uvx` caching behavior
+- Subsequent runs are instant (like `npx`/`uvx`)
+- No network usage after first download
 
 ### 🔒 **Safety**
-- No direct piping to bash (`curl | bash` is unsafe)
-- Uses temporary files
-- Automatic cleanup
-- Explicit execution permissions
+- No direct piping to bash (`curl | bash` is risky)
+- Uses filesystem caching (you can inspect before running)
+- Explicit executable permissions
+- Clean exit handling
 
 ### 📦 **Convenience**
-- GitHub shorthand syntax
-- Argument passing
-- Branch support with `@` syntax
-- Works with any shell script
+- GitHub `gh:` shorthand syntax (inspired by GitHub CLI)
+- Branch support with `@` syntax: `gh:user/repo@branch/file`
+- Full argument passing
+- Works with any executable shell script
 
 ### ♻️ **Cache Management**
 ```bash
-# Clear the cache (like npm cache clean)
+# Clear the cache (like `npm cache clean`)
 shurl --clear-cache
 
 # Cache location
@@ -155,10 +162,10 @@ SHURL_CACHE=/tmp/my-cache shurl gh:user/repo/script.sh
 
 ### vs `curl | bash`
 ```bash
-# UNSAFE: No error handling, immediate execution
+# UNSAFE: No error handling, immediate execution, can fail mid-stream
 curl -fsSL https://example.com/script.sh | bash
 
-# SAFE: Cached, proper error handling
+# SAFE: Cached, error checked, inspectable
 shurl https://example.com/script.sh
 ```
 
@@ -171,83 +178,133 @@ npx create-react-app my-app
 shurl gh:someorg/cli-tool/init.sh my-project
 ```
 
-### vs `wget + chmod`
+### vs downloading manually
 ```bash
-# Manual approach
+# Manual approach (4 steps)
 wget https://example.com/script.sh
 chmod +x script.sh
-./script.sh
+./script.sh arg1 arg2
 rm script.sh
 
-# With shurl
-shurl https://example.com/script.sh
+# With shurl (1 step, cached)
+shurl https://example.com/script.sh arg1 arg2
 ```
 
 ## Environment Variables
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `SHURL_CACHE` | `~/.cache/shurl` | Cache directory location |
-| Any script-specific variables | | Passed to executed script |
+| `SHURL_CACHE` | `~/.cache/shurl` | Cache directory for scripts |
+| Script-specific env vars | | Passed through to executed script |
+
+## Examples Directory
+
+Check out the [examples](https://github.com/day50-dev/shurl/tree/main/examples) directory for sample scripts:
+
+```bash
+# Run the examples
+shurl gh:day50-dev/shurl/examples/hello.sh
+shurl gh:day50-dev/shurl/examples/colors.sh
+shurl gh:day50-dev/shurl/examples/args.sh param1 param2
+```
 
 ## FAQ
 
 ### Is it safe?
 Safer than `curl | bash`:
-- No direct pipe execution
-- Filesystem caching
+- No direct pipe execution (prevents partial script execution)
+- Filesystem caching (inspect at `~/.cache/shurl/`)
 - Explicit executable permissions
-- You can inspect cached scripts before running
+- Download verification
+
+**Always review scripts from untrusted sources!**
 
 ### Can I use it in CI/CD?
-Yes! Great for:
+Yes! Perfect for:
 - Setting up CI environments
 - Running deployment scripts
 - One-off maintenance tasks
+- Shared team scripts
 
 ```yaml
 # GitHub Actions example
-- name: Run setup script
-  run: shurl gh:our-org/ci-scripts/setup-ubuntu.sh
+- name: Setup environment
+  run: shurl gh:myorg/ci-scripts/ubuntu-setup.sh
+
+- name: Deploy
+  run: shurl gh:myorg/deploy-scripts/deploy.sh ${{ github.ref_name }}
 ```
 
 ### How do I update shurl itself?
 ```bash
-# Since shurl is just a bash script:
-sudo shurl gh:your-org/shurl/main/shurl /usr/local/bin/shurl
+# Update using shurl (meta!)
+sudo shurl gh:day50-dev/shurl/main/shurl /usr/local/bin/shurl
 ```
 
-### Can I use it with private repositories?
-Not directly - use GitHub tokens in URLs or alternative authentication methods.
+### Can I use private repositories?
+For private repos, you'll need to authenticate. One approach:
+
+```bash
+# With GitHub token in URL (not recommended for security)
+shurl https://raw.githubusercontent.com/private/repo/main/script.sh?token=XYZ
+
+# Better: Set up authentication in your environment
+export GITHUB_TOKEN="your_token"
+# Then use a wrapper script or modify shurl to include auth headers
+```
+
+### What if a script needs dependencies?
+The script runs in its own environment. If it needs system packages, it should handle installation itself (with appropriate checks).
 
 ## Contributing
 
-Found a bug? Want a feature?
+Found a bug? Want a feature? Contributions welcome!
+
+1. Fork the repo
+2. Create a feature branch
+3. Submit a PR
+
 ```bash
-# Check out the code
-shurl gh:your-org/shurl/README.md
+# Test your changes
+./shurl gh:day50-dev/shurl/examples/hello.sh
+
+# Run the test suite (if we add one)
+./test.sh
 ```
 
 ## License
 
-MIT - See [LICENSE](https://github.com/your-org/shurl/blob/main/LICENSE)
+MIT License - see [LICENSE](https://github.com/day50-dev/shurl/blob/main/LICENSE)
 
 ---
 
-**Remember:** Always review scripts from untrusted sources before running them. Use `shurl --clear-cache` to remove cached scripts if needed.
+**Security Note:** Always review scripts from untrusted sources. The cache at `~/.cache/shurl/` lets you inspect scripts before running. Use `shurl --clear-cache` to remove questionable scripts.
 
 ## Similar Projects
 
 - [npx](https://docs.npmjs.com/cli/v8/commands/npx) - npm package runner
-- [uvx](https://docs.astral.sh/uv/concepts/tools/) - Python tool runner
-- [deno run](https://deno.land/manual@v1.43.6/basics/modules) - Run TypeScript from URLs
-- [cget](https://github.com/pfultz2/cget) - C++ package manager
+- [uvx](https://docs.astral.sh/uv/concepts/tools/) - Python tool runner from Astral
+- [deno run](https://deno.land/manual@v1.43.6/basics/modules) - Run code from URLs
 - [basher](https://github.com/basherpm/basher) - Package manager for shell scripts
+- [scriptisto](https://github.com/igor-petruk/scriptisto) - Universal script runner
+
+## Star History
+
+If you find this useful, consider starring the repo! ⭐
 
 ---
 
 <p align="center">
-Made with ❤️ for the shell community
+Made with ❤️ by <a href="https://github.com/day50-dev">DA`/50</a>
 <br>
-<code>shurl gh:user/cool-tool/install.sh | less</code> 👀
+<code>shurl gh:day50-dev/shurl/examples/hello.sh</code>
 </p>
+
+---
+
+**Pro tip:** Combine with `less` to preview scripts:
+```bash
+shurl gh:user/repo/script.sh | less
+# Or inspect the cached version:
+cat ~/.cache/shurl/*.sh | less
+```
