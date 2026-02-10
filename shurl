@@ -3,13 +3,14 @@
 # shurl - download and execute shell scripts with GitHub shorthand support
 # Usage: shurl <url> [args...]
 #        shurl gh:user/repo/file [args...]
+#        shurl --dry-run <url>     # Show what would be executed
 #        shurl --clear-cache
 #        shurl --version
 
 set -euo pipefail
 
 # Version
-VERSION="1.0.0"
+VERSION="1.1.0"
 
 # Detect OS and set cache directory
 detect_cache_dir() {
@@ -36,29 +37,47 @@ detect_cache_dir() {
 SHURL_CACHE="$(detect_cache_dir)"
 mkdir -p "$SHURL_CACHE"
 
+DRY_RUN=false
+
 main() {
     if [[ $# -eq 0 ]]; then
         show_help
         exit 1
     fi
     
-    case "$1" in
-        -h|--help)
-            show_help
-            return
-            ;;
-        -v|--version)
-            echo "shurl v$VERSION"
-            return
-            ;;
-        --clear-cache)
-            clear_cache
-            return
-            ;;
-    esac
+    # Parse flags
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)
+                show_help
+                return
+                ;;
+            -v|--version)
+                echo "shurl v$VERSION"
+                return
+                ;;
+            --clear-cache)
+                clear_cache
+                return
+                ;;
+            --dry-run|--dryrun|-n)
+                DRY_RUN=true
+                shift
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+    
+    if [[ $# -eq 0 ]]; then
+        show_help
+        exit 1
+    fi
     
     local url="$1"
     shift
+    local args=("$@")
     
     # Expand GitHub shorthand if needed
     if [[ "$url" =~ ^gh: ]]; then
@@ -70,14 +89,48 @@ main() {
     cache_key=$(get_cache_key "$url")
     local cached_file="$SHURL_CACHE/$cache_key.sh"
     
-    # Download if not cached
+    # Download if not cached (even in dry-run, we show what would happen)
     if [[ ! -f "$cached_file" ]]; then
-        download "$url" "$cached_file"
+        if [[ "$DRY_RUN" == true ]]; then
+            echo "[dry-run] Would download: $url"
+            echo "[dry-run] Would save to: $cached_file"
+        else
+            download "$url" "$cached_file"
+        fi
+    else
+        if [[ "$DRY_RUN" == true ]]; then
+            echo "[dry-run] Using cached file: $cached_file"
+            echo "[dry-run] Cache age: $(stat -c %y "$cached_file" 2>/dev/null || stat -f "%Sm" "$cached_file" 2>/dev/null || echo "unknown")"
+        fi
     fi
     
-    # Run the script
+    if [[ "$DRY_RUN" == true ]]; then
+        # Show what would be executed
+        echo "[dry-run] Would execute: $cached_file"
+        if [[ ${#args[@]} -gt 0 ]]; then
+            echo "[dry-run] With arguments: ${args[*]}"
+        fi
+        
+        # Show first few lines of script (if cached)
+        if [[ -f "$cached_file" ]]; then
+            echo ""
+            echo "[dry-run] Script preview (first 10 lines):"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            head -n 10 "$cached_file"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        fi
+        
+        # Show cache info
+        echo ""
+        echo "[dry-run] Cache info:"
+        echo "  Cache directory: $SHURL_CACHE"
+        echo "  Cache files: $(ls -1 "$SHURL_CACHE/"*.sh 2>/dev/null | wc -l || echo 0)"
+        return
+    fi
+    
+    # Actually run the script
     chmod +x "$cached_file"
-    exec "$cached_file" "$@"
+    exec "$cached_file" "${args[@]}"
 }
 
 get_cache_key() {
@@ -141,23 +194,36 @@ download() {
 
 clear_cache() {
     echo "Clearing shurl cache at: $SHURL_CACHE"
-    rm -rf "$SHURL_CACHE"
-    echo "Cache cleared"
+    if [[ -d "$SHURL_CACHE" ]]; then
+        local file_count
+        file_count=$(ls -1 "$SHURL_CACHE/" 2>/dev/null | wc -l || echo 0)
+        echo "Removing $file_count cached file(s)"
+        rm -rf "$SHURL_CACHE"
+        echo "Cache cleared"
+    else
+        echo "Cache directory does not exist"
+    fi
 }
 
 show_help() {
     cat << EOF
 shurl v$VERSION - Download and execute shell scripts
 
-Usage: shurl <url> [args...]
-       shurl gh:user/repo/file [args...]
+Usage: shurl [OPTIONS] <url> [args...]
+       shurl [OPTIONS] gh:user/repo/file [args...]
+
+Options:
+  -h, --help          Show this help message
+  -v, --version       Show version
+  -n, --dry-run       Show what would be executed without running
+  --clear-cache       Clear the shurl cache
 
 Examples:
   shurl https://example.com/script.sh
   shurl gh:user/repo/script.sh
-  shurl gh:user/repo@develop/setup.sh arg1 arg2
+  shurl --dry-run gh:user/repo/setup.sh
+  shurl -n https://example.com/install.sh arg1 arg2
   shurl --clear-cache
-  shurl --version
 
 GitHub shorthand:
   gh:user/repo/file           -> https://raw.githubusercontent.com/user/repo/main/file

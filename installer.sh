@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # Version
-VERSION="1.0.0"
+VERSION="1.1.0"
 
 # Colors
 RED='\033[0;31m'
@@ -208,7 +208,7 @@ EOF
     fi
 }
 
-# Show usage
+# Show usage with dry-run examples
 show_usage() {
     echo ""
     info "shurl installation complete!"
@@ -217,7 +217,12 @@ show_usage() {
     echo "  shurl --version"
     echo "  shurl --help"
     echo ""
-    echo "Examples:"
+    echo "Examples with dry-run:"
+    echo "  shurl --dry-run gh:day50-dev/shurl/examples/hello.sh"
+    echo "  shurl -n https://example.com/script.sh arg1 arg2"
+    echo "  shurl --dry-run gh:user/repo@develop/setup.sh"
+    echo ""
+    echo "Regular usage:"
     echo "  shurl gh:day50-dev/shurl/examples/hello.sh"
     echo "  shurl https://raw.githubusercontent.com/day50-dev/shurl/main/README.md"
     echo ""
@@ -226,7 +231,7 @@ show_usage() {
 
 # Main
 main() {
-    cat << ENDL
+     cat << ENDL
       ____  ___   _     ____________
      / __ \/   | ( )  _/_/ ____/ __ \\
     / / / / /| |  V _/_//___ \/ / / /
