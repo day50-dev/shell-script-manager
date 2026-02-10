@@ -4,13 +4,14 @@
 # Usage: shurl <url> [args...]
 #        shurl gh:user/repo/file [args...]
 #        shurl --dry-run <url>     # Show what would be executed
+#        shurl --update <url>      # Force fresh download
 #        shurl --clear-cache
 #        shurl --version
 
 set -euo pipefail
 
 # Version
-VERSION="1.1.0"
+VERSION="1.2.0"
 
 # Detect OS and set cache directory
 detect_cache_dir() {
@@ -38,6 +39,7 @@ SHURL_CACHE="$(detect_cache_dir)"
 mkdir -p "$SHURL_CACHE"
 
 DRY_RUN=false
+FORCE_UPDATE=false
 
 main() {
     if [[ $# -eq 0 ]]; then
@@ -62,6 +64,10 @@ main() {
                 ;;
             --dry-run|--dryrun|-n)
                 DRY_RUN=true
+                shift
+                ;;
+            --update|-u)
+                FORCE_UPDATE=true
                 shift
                 ;;
             *)
@@ -89,7 +95,21 @@ main() {
     cache_key=$(get_cache_key "$url")
     local cached_file="$SHURL_CACHE/$cache_key.sh"
     
-    # Download if not cached (even in dry-run, we show what would happen)
+    # Check if we should update
+    if [[ "$FORCE_UPDATE" == true ]]; then
+        if [[ "$DRY_RUN" == true ]]; then
+            echo "[dry-run] Would force update: $url"
+            echo "[dry-run] Would delete cached file: $cached_file"
+        else
+            echo "Forcing update for: $url"
+            if [[ -f "$cached_file" ]]; then
+                rm -f "$cached_file"
+                echo "Removed cached version"
+            fi
+        fi
+    fi
+    
+    # Download if not cached or forced update
     if [[ ! -f "$cached_file" ]]; then
         if [[ "$DRY_RUN" == true ]]; then
             echo "[dry-run] Would download: $url"
@@ -100,7 +120,13 @@ main() {
     else
         if [[ "$DRY_RUN" == true ]]; then
             echo "[dry-run] Using cached file: $cached_file"
-            echo "[dry-run] Cache age: $(stat -c %y "$cached_file" 2>/dev/null || stat -f "%Sm" "$cached_file" 2>/dev/null || echo "unknown")"
+            echo "[dry-run] Cache age: $(get_file_age "$cached_file")"
+            
+            if [[ "$FORCE_UPDATE" == true ]]; then
+                echo "[dry-run] Note: --update flag would force re-download"
+            fi
+        else
+            echo "Using cached version (use --update to refresh)"
         fi
     fi
     
@@ -122,15 +148,32 @@ main() {
         
         # Show cache info
         echo ""
-        echo "[dry-run] Cache info:"
-        echo "  Cache directory: $SHURL_CACHE"
-        echo "  Cache files: $(ls -1 "$SHURL_CACHE/"*.sh 2>/dev/null | wc -l || echo 0)"
+        show_cache_info "dry-run"
         return
     fi
     
     # Actually run the script
     chmod +x "$cached_file"
     exec "$cached_file" "${args[@]}"
+}
+
+get_file_age() {
+    local file="$1"
+    
+    if [[ -f "$file" ]]; then
+        # Try different stat commands for different platforms
+        if stat -c %y "$file" 2>/dev/null; then
+            # GNU stat (Linux)
+            :
+        elif stat -f "%Sm" "$file" 2>/dev/null; then
+            # BSD stat (macOS)
+            :
+        else
+            echo "unknown"
+        fi
+    else
+        echo "not found"
+    fi
 }
 
 get_cache_key() {
@@ -205,6 +248,31 @@ clear_cache() {
     fi
 }
 
+show_cache_info() {
+    local mode="${1:-}"
+    local prefix=""
+    
+    if [[ "$mode" == "dry-run" ]]; then
+        prefix="[dry-run] "
+    fi
+    
+    echo "${prefix}Cache info:"
+    echo "${prefix}  Cache directory: $SHURL_CACHE"
+    
+    if [[ -d "$SHURL_CACHE" ]]; then
+        local file_count
+        file_count=$(ls -1 "$SHURL_CACHE/"*.sh 2>/dev/null | wc -l || echo 0)
+        echo "${prefix}  Cached files: $file_count"
+        
+        if [[ "$file_count" -gt 0 ]] && [[ "$mode" == "dry-run" ]]; then
+            echo "${prefix}  Oldest cache file: $(ls -lt "$SHURL_CACHE/"*.sh 2>/dev/null | tail -1 | awk '{print $9}')"
+            echo "${prefix}  Newest cache file: $(ls -lt "$SHURL_CACHE/"*.sh 2>/dev/null | head -2 | tail -1 | awk '{print $9}')"
+        fi
+    else
+        echo "${prefix}  Cache directory does not exist"
+    fi
+}
+
 show_help() {
     cat << EOF
 shurl v$VERSION - Download and execute shell scripts
@@ -216,13 +284,15 @@ Options:
   -h, --help          Show this help message
   -v, --version       Show version
   -n, --dry-run       Show what would be executed without running
+  -u, --update        Force fresh download (ignore cache)
   --clear-cache       Clear the shurl cache
 
 Examples:
   shurl https://example.com/script.sh
   shurl gh:user/repo/script.sh
-  shurl --dry-run gh:user/repo/setup.sh
-  shurl -n https://example.com/install.sh arg1 arg2
+  shurl --update gh:user/repo/setup.sh          # Force fresh download
+  shurl --dry-run --update gh:user/repo/setup.sh # Preview update
+  shurl -u gh:user/repo/setup.sh arg1 arg2      # Update and run with args
   shurl --clear-cache
 
 GitHub shorthand:
@@ -233,6 +303,11 @@ Cache location:
   Linux:   ~/.cache/shurl
   macOS:   ~/Library/Caches/shurl
   Custom:  Set SHURL_CACHE environment variable
+
+Tips:
+  • Use --update when you want the latest version of a script
+  • Combine --dry-run with --update to see what would be downloaded
+  • Clear cache with --clear-cache if you encounter issues
 EOF
 }
 

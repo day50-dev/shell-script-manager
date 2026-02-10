@@ -24,6 +24,9 @@ shurl gh:day50-dev/shurl/examples/hello.sh
 
 # Preview before running (safety first!)
 shurl --dry-run gh:day50-dev/shurl/examples/hello.sh
+
+# Force fresh download
+shurl --update gh:day50-dev/shurl/examples/hello.sh
 ```
 
 ## Installation
@@ -105,6 +108,19 @@ Dry-run shows:
 - First 10 lines of the script (if cached)
 - Cache directory information
 
+### Update (get fresh versions)
+```bash
+# Force fresh download (ignore cache)
+shurl --update gh:user/repo/script.sh
+shurl -u https://example.com/install.sh  # -u is short for --update
+
+# Update and run with arguments
+shurl --update gh:company/tools/deploy.sh --env production
+
+# Preview what would be updated
+shurl --dry-run --update gh:user/repo/setup.sh
+```
+
 ### Cache management
 ```bash
 # Clear the cache
@@ -119,20 +135,36 @@ SHURL_CACHE=/tmp/my-cache shurl gh:user/repo/script.sh
 
 ## Examples
 
+### Try the example scripts
+```bash
+# Basic hello world with the day50 logo
+shurl gh:day50-dev/shurl/examples/hello.sh
+
+# Colorful demonstration
+shurl gh:day50-dev/shurl/examples/colors.sh
+
+# See how arguments are passed
+shurl gh:day50-dev/shurl/examples/args.sh hello world --flag
+
+# Mock installer with dry-run support
+shurl --dry-run gh:day50-dev/shurl/examples/install-demo.sh
+shurl gh:day50-dev/shurl/examples/install-demo.sh
+
+# Force update example
+shurl --update gh:day50-dev/shurl/examples/hello.sh
+```
+
 ### Real-world use cases
 ```bash
-# Try example scripts
-shurl gh:day50-dev/shurl/examples/hello.sh
-shurl gh:day50-dev/shurl/examples/colors.sh
-shurl gh:day50-dev/shurl/examples/args.sh param1 param2
-
 # Common installers (hypothetical)
 shurl https://get.docker.com
 shurl https://sh.rustup.rs
 
 # Development workflows
 shurl gh:myteam/scripts/dev-setup.sh
-shurl gh:org/tools@develop/deploy.sh --env production
+shurl --update gh:org/tools@develop/deploy.sh --env production  # Get latest
+
+# CI/CD pipelines
 shurl -n gh:external/vendor/install.sh  # Preview before running!
 ```
 
@@ -141,24 +173,26 @@ shurl -n gh:external/vendor/install.sh  # Preview before running!
 # GitHub Actions example
 - name: Setup environment
   run: |
-    shurl gh:myorg/ci-scripts/ubuntu-setup.sh
+    # Always get latest version
+    shurl --update gh:myorg/ci-scripts/ubuntu-setup.sh
     shurl gh:myorg/ci-scripts/install-deps.sh
 
-- name: Deploy with preview
+- name: Deploy with safety checks
   run: |
     # Safety check first
     shurl --dry-run gh:myorg/deploy-scripts/deploy.sh ${{ github.ref_name }}
     # Then run for real
-    shurl gh:myorg/deploy-scripts/deploy.sh ${{ github.ref_name }}
+    shurl --update gh:myorg/deploy-scripts/deploy.sh ${{ github.ref_name }}
 ```
 
 ## How it works
 
 1. **Parse input**: Expands `gh:` shorthand to full GitHub URLs
 2. **Check cache**: Looks in platform-appropriate cache directory
-3. **Download if needed**: Uses `curl` or `wget` to fetch script
-4. **Cache**: Saves with SHA256 hash as filename
-5. **Execute**: Makes executable and runs with arguments
+3. **Check --update**: If specified, deletes cached version
+4. **Download if needed**: Uses `curl` or `wget` to fetch script
+5. **Cache**: Saves with SHA256 hash as filename
+6. **Execute**: Makes executable and runs with arguments
 
 ## Platform Support
 
@@ -175,16 +209,17 @@ shurl -n gh:external/vendor/install.sh  # Preview before running!
 ### Other Unix-like
 - Falls back to `~/.local/bin` and `~/.cache/shurl`
 
-## Comparison
+## Feature Comparison
 
-### vs `curl | bash` (UNSAFE)
-```bash
-# UNSAFE: No error handling, executes immediately
-curl -fsSL https://example.com/script.sh | bash
-
-# SAFE: Cached, inspectable, has dry-run
-shurl https://example.com/script.sh
-```
+| Feature | `curl | bash` | `shurl` |
+|---------|--------|--------|
+| Cache scripts | ❌ No | ✅ Yes |
+| GitHub shorthand | ❌ No | ✅ Yes |
+| Dry-run mode | ❌ No | ✅ Yes |
+| Force updates | ❌ No | ✅ Yes (`--update`) |
+| Safe execution | ❌ Risky | ✅ Safe |
+| Argument passing | ✅ Yes | ✅ Yes |
+| Cross-platform | ✅ Yes | ✅ Yes |
 
 ### vs `npx`/`uvx`
 ```bash
@@ -196,18 +231,7 @@ uvx ruff check .
 
 # shurl for shell scripts
 shurl gh:someorg/cli-tool/init.sh my-project
-```
-
-### vs manual download
-```bash
-# Manual (4 steps)
-wget https://example.com/script.sh
-chmod +x script.sh
-./script.sh arg1 arg2
-rm script.sh
-
-# With shurl (1 step, cached)
-shurl https://example.com/script.sh arg1 arg2
+shurl --update gh:org/tool@latest/run.sh  # Get latest
 ```
 
 ## Security & Safety
@@ -216,21 +240,32 @@ shurl https://example.com/script.sh arg1 arg2
 1. **No pipe execution**: Unlike `curl | bash`, scripts are saved to disk first
 2. **Cache inspection**: You can review cached scripts at any time
 3. **Dry-run mode**: Preview before execution
-4. **Explicit permissions**: Scripts are made executable only when run
-5. **Download verification**: Checks for empty files and download errors
+4. **Update control**: Choose when to get fresh versions
+5. **Explicit permissions**: Scripts are made executable only when run
 
 ### Best practices
 ```bash
 # Always preview unknown scripts
 shurl --dry-run https://unknown.com/script.sh
 
+# Force updates for critical scripts
+shurl --update gh:security/patches/apply.sh
+
 # Review cached scripts
-cat ~/.cache/shurl/*.sh  # Linux
-cat ~/Library/Caches/shurl/*.sh  # macOS
+ls -la ~/.cache/shurl/  # Linux
+ls -la ~/Library/Caches/shurl/  # macOS
 
 # Clear cache if unsure
 shurl --clear-cache
 ```
+
+## When to use --update
+
+- **Scripts that change frequently** (CI/CD scripts, dynamic installers)
+- **After clearing cache** (`shurl --clear-cache`)
+- **When you suspect cached version is stale**
+- **During development** when iterating on scripts
+- **Security patches** where you need the latest version
 
 ## Environment Variables
 
@@ -255,22 +290,27 @@ rm -rf ~/Library/Caches/shurl  # macOS
 ### Is it safe?
 **Safer than `curl | bash`** but you should still:
 - Use `--dry-run` to preview scripts
+- Use `--update` when you need fresh versions
 - Review scripts from untrusted sources
 - Clear cache if something seems suspicious
+
+### When should I use --update vs --clear-cache?
+- `--update`: Updates one specific script
+- `--clear-cache`: Removes ALL cached scripts
 
 ### Can I use private repositories?
 For private GitHub repos, you'll need to add authentication:
 ```bash
-# With GitHub token (not recommended in commands)
+# With GitHub token
 GITHUB_TOKEN=your_token shurl https://raw.githubusercontent.com/private/repo/main/script.sh
 ```
 
 Better: Create a wrapper script that adds auth headers.
 
-### How do I update shurl?
+### How do I update shurl itself?
 ```bash
-# Update using shurl itself
-sudo shurl gh:day50-dev/shurl/main/shurl /usr/local/bin/shurl
+# Update using shurl (meta!)
+shurl --update gh:day50-dev/shurl/main/shurl /usr/local/bin/shurl
 ```
 
 ### What if I get "command not found"?
@@ -309,5 +349,5 @@ MIT License - see [LICENSE](https://github.com/day50-dev/shurl/blob/main/LICENSE
 <p align="center">
 Made with ❤️ by <a href="https://github.com/day50-dev">day50-dev</a>
 <br>
-<code>shurl --dry-run gh:day50-dev/shurl/examples/hello.sh</code>
+<code>shurl --update --dry-run gh:day50-dev/shurl/examples/hello.sh</code>
 </p>
