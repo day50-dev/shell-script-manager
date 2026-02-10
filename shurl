@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# shurl - download and execute shell scripts safely
+# Usage: shurl <url> [args...]
+
+set -euo pipefail
+
+main() {
+    if [[ $# -eq 0 ]]; then
+        echo "Usage: shurl <url> [args...]"
+        exit 1
+    fi
+
+    local url="$1"
+    shift
+    
+    # Create temp file with .sh extension
+    local tmpfile
+    tmpfile=$(mktemp /tmp/shurl-XXXXXX.sh)
+    
+    # Ensure cleanup on exit
+    trap 'rm -f "$tmpfile"' EXIT
+    
+    # Download the script
+    if command -v curl &>/dev/null; then
+        curl -fsSL "$url" > "$tmpfile"
+    elif command -v wget &>/dev/null; then
+        wget -qO- "$url" > "$tmpfile"
+    else
+        echo "Error: curl or wget required" >&2
+        exit 1
+    fi
+    
+    # Make executable and run with remaining arguments
+    chmod +x "$tmpfile"
+    exec "$tmpfile" "$@"
+}
+
+main "$@"
