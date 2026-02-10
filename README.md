@@ -143,13 +143,6 @@ shurl gh:day50-dev/shurl/examples/hello.sh
 # Colorful demonstration
 shurl gh:day50-dev/shurl/examples/colors.sh
 
-# See how arguments are passed
-shurl gh:day50-dev/shurl/examples/args.sh hello world --flag
-
-# Mock installer with dry-run support
-shurl --dry-run gh:day50-dev/shurl/examples/install-demo.sh
-shurl gh:day50-dev/shurl/examples/install-demo.sh
-
 # Force update example
 shurl --update gh:day50-dev/shurl/examples/hello.sh
 ```
