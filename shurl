@@ -1,39 +1,101 @@
 #!/usr/bin/env bash
 
-# shurl - download and execute shell scripts safely
+# shurl - download and execute shell scripts with GitHub shorthand support
 # Usage: shurl <url> [args...]
+#        shurl gh:user/repo/file [args...]
+#        shurl --clear-cache
 
 set -euo pipefail
 
+SHURL_CACHE="${SHURL_CACHE:-$HOME/.cache/shurl}"
+mkdir -p "$SHURL_CACHE"
+
 main() {
     if [[ $# -eq 0 ]]; then
-        echo "Usage: shurl <url> [args...]"
+        echo "Usage: shurl <url|gh:user/repo/file> [args...]"
+        echo "       shurl --clear-cache"
         exit 1
     fi
-
+    
+    if [[ "$1" == "--clear-cache" ]]; then
+        rm -rf "$SHURL_CACHE"
+        echo "Cache cleared"
+        return
+    fi
+    
     local url="$1"
     shift
     
-    # Create temp file with .sh extension
-    local tmpfile
-    tmpfile=$(mktemp /tmp/shurl-XXXXXX.sh)
+    # Expand GitHub shorthand if needed
+    if [[ "$url" =~ ^gh: ]]; then
+        url=$(expand_github_shorthand "$url")
+    fi
     
-    # Ensure cleanup on exit
-    trap 'rm -f "$tmpfile"' EXIT
+    # Create cache key from URL
+    local cache_key
+    cache_key=$(echo "$url" | sha256sum | cut -d' ' -f1)
+    local cached_file="$SHURL_CACHE/$cache_key.sh"
     
-    # Download the script
+    # Download if not cached
+    if [[ ! -f "$cached_file" ]]; then
+        download "$url" "$cached_file"
+    fi
+    
+    # Run the script
+    chmod +x "$cached_file"
+    exec "$cached_file" "$@"
+}
+
+expand_github_shorthand() {
+    local shorthand="$1"
+    
+    # Remove gh: prefix
+    local path="${shorthand#gh:}"
+    
+    # Split into user/repo and file path
+    local repo_part
+    local file_path
+    
+    # Check if there's a slash in the file path part
+    if [[ "$path" =~ ^([^/]+/[^/]+)/(.+)$ ]]; then
+        repo_part="${BASH_REMATCH[1]}"
+        file_path="${BASH_REMATCH[2]}"
+    else
+        echo "Error: Invalid GitHub shorthand format. Use: gh:user/repo/file" >&2
+        exit 1
+    fi
+    
+    # Default branch to main, but allow override with @branch syntax
+    local branch="main"
+    if [[ "$repo_part" =~ ^(.+)@(.+)$ ]]; then
+        repo_part="${BASH_REMATCH[1]}"
+        branch="${BASH_REMATCH[2]}"
+    fi
+    
+    # Construct the raw GitHub URL
+    echo "https://raw.githubusercontent.com/${repo_part}/${branch}/${file_path}"
+}
+
+download() {
+    local url="$1"
+    local dest="$2"
+    
+    echo "Downloading: $url" >&2
+    
     if command -v curl &>/dev/null; then
-        curl -fsSL "$url" > "$tmpfile"
+        curl -fsSL "$url" > "$dest"
     elif command -v wget &>/dev/null; then
-        wget -qO- "$url" > "$tmpfile"
+        wget -qO- "$url" > "$dest"
     else
         echo "Error: curl or wget required" >&2
         exit 1
     fi
     
-    # Make executable and run with remaining arguments
-    chmod +x "$tmpfile"
-    exec "$tmpfile" "$@"
+    # Check if download succeeded
+    if [[ ! -s "$dest" ]]; then
+        echo "Error: Failed to download or empty file" >&2
+        exit 1
+    fi
 }
 
 main "$@"
