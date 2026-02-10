@@ -4,24 +4,58 @@
 # Usage: shurl <url> [args...]
 #        shurl gh:user/repo/file [args...]
 #        shurl --clear-cache
+#        shurl --version
 
 set -euo pipefail
 
-SHURL_CACHE="${SHURL_CACHE:-$HOME/.cache/shurl}"
+# Version
+VERSION="1.0.0"
+
+# Detect OS and set cache directory
+detect_cache_dir() {
+    local os_cache_dir
+    
+    case "$(uname -s)" in
+        Darwin*)
+            # macOS: Use ~/Library/Caches
+            os_cache_dir="$HOME/Library/Caches"
+            ;;
+        Linux*)
+            # Linux: Use ~/.cache (XDG_CACHE_HOME)
+            os_cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}"
+            ;;
+        *)
+            # Other Unix-like: fallback to ~/.cache
+            os_cache_dir="$HOME/.cache"
+            ;;
+    esac
+    
+    echo "${SHURL_CACHE:-$os_cache_dir/shurl}"
+}
+
+SHURL_CACHE="$(detect_cache_dir)"
 mkdir -p "$SHURL_CACHE"
 
 main() {
     if [[ $# -eq 0 ]]; then
-        echo "Usage: shurl <url|gh:user/repo/file> [args...]"
-        echo "       shurl --clear-cache"
+        show_help
         exit 1
     fi
     
-    if [[ "$1" == "--clear-cache" ]]; then
-        rm -rf "$SHURL_CACHE"
-        echo "Cache cleared"
-        return
-    fi
+    case "$1" in
+        -h|--help)
+            show_help
+            return
+            ;;
+        -v|--version)
+            echo "shurl v$VERSION"
+            return
+            ;;
+        --clear-cache)
+            clear_cache
+            return
+            ;;
+    esac
     
     local url="$1"
     shift
@@ -33,7 +67,7 @@ main() {
     
     # Create cache key from URL
     local cache_key
-    cache_key=$(echo "$url" | sha256sum | cut -d' ' -f1)
+    cache_key=$(get_cache_key "$url")
     local cached_file="$SHURL_CACHE/$cache_key.sh"
     
     # Download if not cached
@@ -46,34 +80,41 @@ main() {
     exec "$cached_file" "$@"
 }
 
+get_cache_key() {
+    local url="$1"
+    
+    # Use sha256sum or shasum depending on what's available
+    if command -v sha256sum &>/dev/null; then
+        echo "$url" | sha256sum | cut -d' ' -f1
+    elif command -v shasum &>/dev/null; then
+        echo "$url" | shasum -a 256 | cut -d' ' -f1
+    else
+        # Fallback: use a simpler hash
+        echo "$url" | md5sum 2>/dev/null | cut -d' ' -f1 || \
+        echo "$url" | md5 2>/dev/null | cut -d' ' -f1 || \
+        # Last resort: use basename with timestamp
+        basename "$url" | tr -cd '[:alnum:]' | head -c 32
+    fi
+}
+
 expand_github_shorthand() {
     local shorthand="$1"
     
     # Remove gh: prefix
     local path="${shorthand#gh:}"
     
-    # Split into user/repo and file path
-    local repo_part
-    local file_path
-    
-    # Check if there's a slash in the file path part
-    if [[ "$path" =~ ^([^/]+/[^/]+)/(.+)$ ]]; then
-        repo_part="${BASH_REMATCH[1]}"
-        file_path="${BASH_REMATCH[2]}"
+    # Try to parse as user/repo@branch/path/to/file
+    if [[ "$path" =~ ^([^/]+)/([^/@]+)(@([^/]+))?/(.+)$ ]]; then
+        local user="${BASH_REMATCH[1]}"
+        local repo="${BASH_REMATCH[2]}"
+        local branch="${BASH_REMATCH[4]:-main}"
+        local file_path="${BASH_REMATCH[5]}"
+        
+        echo "https://raw.githubusercontent.com/${user}/${repo}/${branch}/${file_path}"
     else
-        echo "Error: Invalid GitHub shorthand format. Use: gh:user/repo/file" >&2
+        echo "Error: Invalid GitHub shorthand format. Use: gh:user/repo/file or gh:user/repo@branch/file" >&2
         exit 1
     fi
-    
-    # Default branch to main, but allow override with @branch syntax
-    local branch="main"
-    if [[ "$repo_part" =~ ^(.+)@(.+)$ ]]; then
-        repo_part="${BASH_REMATCH[1]}"
-        branch="${BASH_REMATCH[2]}"
-    fi
-    
-    # Construct the raw GitHub URL
-    echo "https://raw.githubusercontent.com/${repo_part}/${branch}/${file_path}"
 }
 
 download() {
@@ -96,6 +137,37 @@ download() {
         echo "Error: Failed to download or empty file" >&2
         exit 1
     fi
+}
+
+clear_cache() {
+    echo "Clearing shurl cache at: $SHURL_CACHE"
+    rm -rf "$SHURL_CACHE"
+    echo "Cache cleared"
+}
+
+show_help() {
+    cat << EOF
+shurl v$VERSION - Download and execute shell scripts
+
+Usage: shurl <url> [args...]
+       shurl gh:user/repo/file [args...]
+
+Examples:
+  shurl https://example.com/script.sh
+  shurl gh:user/repo/script.sh
+  shurl gh:user/repo@develop/setup.sh arg1 arg2
+  shurl --clear-cache
+  shurl --version
+
+GitHub shorthand:
+  gh:user/repo/file           -> https://raw.githubusercontent.com/user/repo/main/file
+  gh:user/repo@branch/file    -> https://raw.githubusercontent.com/user/repo/branch/file
+
+Cache location:
+  Linux:   ~/.cache/shurl
+  macOS:   ~/Library/Caches/shurl
+  Custom:  Set SHURL_CACHE environment variable
+EOF
 }
 
 main "$@"
