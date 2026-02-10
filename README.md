@@ -340,7 +340,7 @@ MIT License - see [LICENSE](https://github.com/day50-dev/shurl/blob/main/LICENSE
 ---
 
 <p align="center">
-Made with ❤️ by <a href="https://github.com/day50-dev">day50-dev</a>
+Made with ❤️ by <a href="https://github.com/day50-dev"><strong>DA`/50</strong></a>
 <br>
 <code>shurl --update --dry-run gh:day50-dev/shurl/examples/hello.sh</code>
 </p>
