@@ -11,7 +11,7 @@
 set -euo pipefail
 
 # Version
-VERSION="1.2.0"
+VERSION="1.3.1"
 
 # Detect OS and set cache directory
 detect_cache_dir() {
@@ -40,6 +40,7 @@ mkdir -p "$SHURL_CACHE"
 
 DRY_RUN=false
 FORCE_UPDATE=false
+QUIET=false
 
 main() {
     if [[ $# -eq 0 ]]; then
@@ -70,6 +71,10 @@ main() {
                 FORCE_UPDATE=true
                 shift
                 ;;
+            -q|--quiet)
+                QUIET=true
+                shift
+                ;;
             *)
                 break
                 ;;
@@ -98,13 +103,12 @@ main() {
     # Check if we should update
     if [[ "$FORCE_UPDATE" == true ]]; then
         if [[ "$DRY_RUN" == true ]]; then
-            echo "[dry-run] Would force update: $url"
-            echo "[dry-run] Would delete cached file: $cached_file"
+            echo "[dry-run] Would force update: $url" >&2
+            echo "[dry-run] Would delete cached file: $cached_file" >&2
         else
-            echo "Forcing update for: $url"
+            [[ "$QUIET" != true ]] && echo "Forcing update for: $url" >&2
             if [[ -f "$cached_file" ]]; then
                 rm -f "$cached_file"
-                echo "Removed cached version"
             fi
         fi
     fi
@@ -112,68 +116,63 @@ main() {
     # Download if not cached or forced update
     if [[ ! -f "$cached_file" ]]; then
         if [[ "$DRY_RUN" == true ]]; then
-            echo "[dry-run] Would download: $url"
-            echo "[dry-run] Would save to: $cached_file"
+            echo "[dry-run] Would download: $url" >&2
+            echo "[dry-run] Would save to: $cached_file" >&2
         else
+            [[ "$QUIET" != true ]] && echo "Downloading: $url" >&2
             download "$url" "$cached_file"
         fi
-    else
-        if [[ "$DRY_RUN" == true ]]; then
-            echo "[dry-run] Using cached file: $cached_file"
-            echo "[dry-run] Cache age: $(get_file_age "$cached_file")"
-            
-            if [[ "$FORCE_UPDATE" == true ]]; then
-                echo "[dry-run] Note: --update flag would force re-download"
-            fi
-        else
-            echo "Using cached version (use --update to refresh)"
-        fi
+    # Removed the "Using cached version" message entirely
     fi
     
     if [[ "$DRY_RUN" == true ]]; then
         # Show what would be executed
-        echo "[dry-run] Would execute: $cached_file"
+        echo "[dry-run] Would execute: $cached_file" >&2
         if [[ ${#args[@]} -gt 0 ]]; then
-            echo "[dry-run] With arguments: ${args[*]}"
+            echo "[dry-run] With arguments: ${args[*]}" >&2
         fi
         
         # Show first few lines of script (if cached)
         if [[ -f "$cached_file" ]]; then
-            echo ""
-            echo "[dry-run] Script preview (first 10 lines):"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "" >&2
+            echo "[dry-run] Script preview (first 10 lines):" >&2
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
             head -n 10 "$cached_file"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
         fi
         
         # Show cache info
-        echo ""
+        echo "" >&2
         show_cache_info "dry-run"
         return
     fi
     
     # Actually run the script
+    if [[ ! -f "$cached_file" ]]; then
+        # This shouldn't happen, but just in case
+        error_exit "Cache file not found: $cached_file"
+    fi
+    
+    # Verify the script is valid before executing
+    if [[ ! -s "$cached_file" ]]; then
+        error_exit "Cached file is empty. Try: shurl --update '$url'"
+    fi
+    
+    # Check if it's a valid shell script
+    if ! head -n 1 "$cached_file" | grep -q -E "^#!.*(bash|sh|zsh|dash|ksh)"; then
+        # Check for shebang in first 2 lines (some scripts have blank first line)
+        if ! head -n 2 "$cached_file" | grep -q -E "^#!.*(bash|sh|zsh|dash|ksh)"; then
+            error_exit "Downloaded file is not a valid shell script (missing shebang).\nURL: $url\n\nEither:\n1. The URL points to a non-shell-script file\n2. The download failed/corrupted\n3. Try: shurl --update '$url'"
+        fi
+    fi
+    
     chmod +x "$cached_file"
     exec "$cached_file" "${args[@]}"
 }
 
-get_file_age() {
-    local file="$1"
-    
-    if [[ -f "$file" ]]; then
-        # Try different stat commands for different platforms
-        if stat -c %y "$file" 2>/dev/null; then
-            # GNU stat (Linux)
-            :
-        elif stat -f "%Sm" "$file" 2>/dev/null; then
-            # BSD stat (macOS)
-            :
-        else
-            echo "unknown"
-        fi
-    else
-        echo "not found"
-    fi
+error_exit() {
+    echo -e "shurl: error: $1" >&2
+    exit 1
 }
 
 get_cache_key() {
@@ -208,8 +207,7 @@ expand_github_shorthand() {
         
         echo "https://raw.githubusercontent.com/${user}/${repo}/${branch}/${file_path}"
     else
-        echo "Error: Invalid GitHub shorthand format. Use: gh:user/repo/file or gh:user/repo@branch/file" >&2
-        exit 1
+        error_exit "Invalid GitHub shorthand: '$shorthand'\n\nFormat should be: gh:user/repo/file\nOr with branch: gh:user/repo@branch/file\n\nExamples:\n  gh:day50-dev/shurl/examples/hello.sh\n  gh:user/repo@develop/setup.sh"
     fi
 }
 
@@ -217,34 +215,42 @@ download() {
     local url="$1"
     local dest="$2"
     
-    echo "Downloading: $url" >&2
-    
+    # Try curl first, then wget
     if command -v curl &>/dev/null; then
-        curl -fsSL "$url" > "$dest"
+        # Use -f to fail on 404, -L to follow redirects, -S to show errors
+        if ! curl -fLS "$url" -o "$dest" 2>/dev/null; then
+            # Get HTTP status code for better error message
+            local status_code
+            status_code=$(curl -fsSL -w "%{http_code}" -o /dev/null "$url" 2>/dev/null || echo "unknown")
+            rm -f "$dest" 2>/dev/null
+            error_exit "Failed to download from '$url' (HTTP $status_code)\n\nPossible reasons:\n1. URL is incorrect\n2. File doesn't exist\n3. Network issue\n4. Server requires authentication"
+        fi
     elif command -v wget &>/dev/null; then
-        wget -qO- "$url" > "$dest"
+        if ! wget -qO "$dest" "$url" 2>/dev/null; then
+            rm -f "$dest" 2>/dev/null
+            error_exit "Failed to download from '$url'\n\nPossible reasons:\n1. URL is incorrect\n2. File doesn't exist\n3. Network issue\n4. Server requires authentication"
+        fi
     else
-        echo "Error: curl or wget required" >&2
-        exit 1
+        error_exit "curl or wget is required"
     fi
     
     # Check if download succeeded
     if [[ ! -s "$dest" ]]; then
-        echo "Error: Failed to download or empty file" >&2
-        exit 1
+        rm -f "$dest" 2>/dev/null
+        error_exit "Downloaded file is empty from '$url'\n\nThe server returned an empty response. This could mean:\n1. The file is actually empty\n2. The URL points to a directory listing (not raw file)\n3. Authentication is required\n4. Server error"
     fi
 }
 
 clear_cache() {
-    echo "Clearing shurl cache at: $SHURL_CACHE"
+    echo "Clearing shurl cache at: $SHURL_CACHE" >&2
     if [[ -d "$SHURL_CACHE" ]]; then
         local file_count
         file_count=$(ls -1 "$SHURL_CACHE/" 2>/dev/null | wc -l || echo 0)
-        echo "Removing $file_count cached file(s)"
+        echo "Removing $file_count cached file(s)" >&2
         rm -rf "$SHURL_CACHE"
-        echo "Cache cleared"
+        echo "Cache cleared" >&2
     else
-        echo "Cache directory does not exist"
+        echo "Cache directory does not exist" >&2
     fi
 }
 
@@ -256,20 +262,15 @@ show_cache_info() {
         prefix="[dry-run] "
     fi
     
-    echo "${prefix}Cache info:"
-    echo "${prefix}  Cache directory: $SHURL_CACHE"
+    echo "${prefix}Cache info:" >&2
+    echo "${prefix}  Cache directory: $SHURL_CACHE" >&2
     
     if [[ -d "$SHURL_CACHE" ]]; then
         local file_count
         file_count=$(ls -1 "$SHURL_CACHE/"*.sh 2>/dev/null | wc -l || echo 0)
-        echo "${prefix}  Cached files: $file_count"
-        
-        if [[ "$file_count" -gt 0 ]] && [[ "$mode" == "dry-run" ]]; then
-            echo "${prefix}  Oldest cache file: $(ls -lt "$SHURL_CACHE/"*.sh 2>/dev/null | tail -1 | awk '{print $9}')"
-            echo "${prefix}  Newest cache file: $(ls -lt "$SHURL_CACHE/"*.sh 2>/dev/null | head -2 | tail -1 | awk '{print $9}')"
-        fi
+        echo "${prefix}  Cached files: $file_count" >&2
     else
-        echo "${prefix}  Cache directory does not exist"
+        echo "${prefix}  Cache directory does not exist" >&2
     fi
 }
 
@@ -285,14 +286,15 @@ Options:
   -v, --version       Show version
   -n, --dry-run       Show what would be executed without running
   -u, --update        Force fresh download (ignore cache)
+  -q, --quiet         Suppress non-error output
   --clear-cache       Clear the shurl cache
 
 Examples:
   shurl https://example.com/script.sh
   shurl gh:user/repo/script.sh
   shurl --update gh:user/repo/setup.sh          # Force fresh download
-  shurl --dry-run --update gh:user/repo/setup.sh # Preview update
-  shurl -u gh:user/repo/setup.sh arg1 arg2      # Update and run with args
+  shurl --dry-run gh:user/repo/setup.sh         # Preview execution
+  shurl -q gh:user/repo/tool.sh                 # Quiet mode (no status messages)
   shurl --clear-cache
 
 GitHub shorthand:
@@ -304,10 +306,14 @@ Cache location:
   macOS:   ~/Library/Caches/shurl
   Custom:  Set SHURL_CACHE environment variable
 
+Output:
+  By default, shurl shows status messages. Use -q for clean output.
+  Errors always go to stderr. Script output goes to stdout.
+
 Tips:
-  • Use --update when you want the latest version of a script
-  • Combine --dry-run with --update to see what would be downloaded
-  • Clear cache with --clear-cache if you encounter issues
+  • Use -q when piping/parsing script output
+  • Use --update when you need the latest version
+  • Use --dry-run to preview before execution
 EOF
 }
 
