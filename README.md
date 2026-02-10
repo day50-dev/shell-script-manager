@@ -1,0 +1,2 @@
+# shurl
+npx for bash
