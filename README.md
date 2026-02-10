@@ -17,7 +17,7 @@ Then `shurl` is the shell script equivalent.
 
 ```bash
 # Install shurl (one-liner)
-curl -fsSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
 
 # Run a script
 shurl gh:day50-dev/shurl/examples/hello.sh
@@ -34,7 +34,7 @@ shurl --update gh:day50-dev/shurl/examples/hello.sh
 ### Quick install (recommended)
 ```bash
 # One-line install (auto-detects macOS/Linux)
-curl -fsSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
 ```
 
 ### Alternative installation methods
@@ -42,7 +42,7 @@ curl -fsSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | b
 **Direct download:**
 ```bash
 # To ~/.local/bin (Unix standard)
-curl -fsSL https://raw.githubusercontent.com/day50-dev/shurl/main/shurl -o ~/.local/bin/shurl
+curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/main/shurl -o ~/.local/bin/shurl
 chmod +x ~/.local/bin/shurl
 
 # Ensure ~/.local/bin is in your PATH
@@ -52,10 +52,10 @@ export PATH="$HOME/.local/bin:$PATH"
 **With custom location:**
 ```bash
 # Install to specific directory
-INSTALL_DIR=/opt/bin curl -fsSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
+INSTALL_DIR=/opt/bin curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
 
 # macOS Homebrew users
-INSTALL_DIR=/opt/homebrew/bin curl -fsSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
+INSTALL_DIR=/opt/homebrew/bin curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
 ```
 
 ### Verify installation
