@@ -1,4 +1,4 @@
-# shurl 📦⚡
+# shurl 🚀
 
 **Like `npx` and `uvx`, but for shell scripts.**
 
@@ -21,6 +21,9 @@ curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | ba
 
 # Run a script
 shurl gh:day50-dev/shurl/examples/hello.sh
+
+# Install a tool globally (like pipx/uvx install)
+shurl --install gh:user/repo/tool.sh
 
 # Preview before running (safety first!)
 shurl --dry-run gh:day50-dev/shurl/examples/hello.sh
@@ -73,6 +76,29 @@ shurl https://example.com/script.sh
 
 # Pass arguments to the script
 shurl https://example.com/tool.sh install --verbose arg1 arg2
+```
+
+### Install tools globally (new in v1.4.0!)
+Like `pipx install` or `uvx install`, install scripts as standalone commands:
+
+```bash
+# Install a tool to ~/.local/bin
+shurl --install gh:user/repo/tool.sh
+
+# Force fresh download and install
+shurl --update --install gh:user/repo/tool.sh
+
+# Preview what would be installed
+shurl --dry-run --install gh:user/repo/tool.sh
+```
+
+After installation, you can run the tool directly:
+```bash
+# Install it once
+shurl --install gh:user/repo/weather-cli.sh
+
+# Use it like any other command
+weather-cli new-york
 ```
 
 ### GitHub shorthand
@@ -157,6 +183,10 @@ shurl https://sh.rustup.rs
 shurl gh:myteam/scripts/dev-setup.sh
 shurl --update gh:org/tools@develop/deploy.sh --env production  # Get latest
 
+# Install and use tools permanently
+shurl --install gh:cli/tools/weather.sh
+weather --location "New York"
+
 # CI/CD pipelines
 shurl -n gh:external/vendor/install.sh  # Preview before running!
 ```
@@ -186,17 +216,20 @@ shurl -n gh:external/vendor/install.sh  # Preview before running!
 4. **Download if needed**: Uses `curl` or `wget` to fetch script
 5. **Cache**: Saves with SHA256 hash as filename
 6. **Execute**: Makes executable and runs with arguments
+7. **Install**: When using `--install`, copies to `~/.local/bin` for permanent use
 
 ## Platform Support
 
 ### macOS
 - Installs to: `~/.local/bin` (preferred) or `/usr/local/bin`
 - Cache directory: `~/Library/Caches/shurl`
+- Install location: `~/.local/bin` for `--install`
 - Add to PATH: Add to `~/.zshrc` or `~/.bash_profile`
 
 ### Linux/BSD
 - Installs to: `~/.local/bin` (XDG standard) or `/usr/local/bin`
 - Cache directory: `~/.cache/shurl` (XDG_CACHE_HOME)
+- Install location: `~/.local/bin` for `--install`
 - Add to PATH: Add to `~/.bashrc` or `~/.zshrc`
 
 ### Other Unix-like
@@ -210,11 +243,15 @@ shurl -n gh:external/vendor/install.sh  # Preview before running!
 3. **Dry-run mode**: Preview before execution
 4. **Update control**: Choose when to get fresh versions
 5. **Explicit permissions**: Scripts are made executable only when run
+6. **Install verification**: `--dry-run` shows what would be installed
 
 ### Best practices
 ```bash
 # Always preview unknown scripts
 shurl --dry-run https://unknown.com/script.sh
+
+# Preview before installing
+shurl --dry-run --install gh:new/tool/installer.sh
 
 # Force updates for critical scripts
 shurl --update gh:security/patches/apply.sh
@@ -223,17 +260,18 @@ shurl --update gh:security/patches/apply.sh
 ls -la ~/.cache/shurl/  # Linux
 ls -la ~/Library/Caches/shurl/  # macOS
 
+# Review installed tools
+ls -la ~/.local/bin/ | grep ".sh"
+
 # Clear cache if unsure
 shurl --clear-cache
 ```
 
-## When to use --update
+## When to use --install vs run
 
-- **Scripts that change frequently** (CI/CD scripts, dynamic installers)
-- **After clearing cache** (`shurl --clear-cache`)
-- **When you suspect cached version is stale**
-- **During development** when iterating on scripts
-- **Security patches** where you need the latest version
+- **Use `shurl <url>`**: For one-time scripts, installers, or ephemeral tasks
+- **Use `shurl --install <url>`**: For tools you'll use regularly, similar to `pipx install`
+- **Use `--dry-run` first**: Always preview before installing
 
 ## Environment Variables
 
@@ -251,6 +289,10 @@ rm ~/.local/bin/shurl  # or wherever installed
 # Clear cache (optional)
 rm -rf ~/.cache/shurl      # Linux/BSD
 rm -rf ~/Library/Caches/shurl  # macOS
+
+# Remove installed tools (optional)
+# Check what was installed via shurl
+ls -la ~/.local/bin/ | grep ".sh"
 ```
 
 ## FAQ
@@ -258,7 +300,7 @@ rm -rf ~/Library/Caches/shurl  # macOS
 ### Is it safe?
 **Safer than `curl | bash`** but you should still:
 - Use `--dry-run` to preview scripts
-- Use `--update` when you need fresh versions
+- Use `--dry-run --install` to preview installations
 - Review scripts from untrusted sources
 - Clear cache if something seems suspicious
 
@@ -284,6 +326,14 @@ export PATH="$HOME/.local/bin:$PATH"
 # Permanent fix (add to your shell config)
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc  # or ~/.zshrc
 ```
+
+### How does --install work?
+When you use `--install`, `shurl`:
+1. Downloads and caches the script (like normal)
+2. Extracts a clean name from the URL (removes `.sh` extension)
+3. Copies it to `~/.local/bin/`
+4. Makes it executable
+5. Shows you: `"tool-name is now available in /home/user/.local/bin"`
 
 ## Contributing
 
@@ -312,4 +362,6 @@ MIT License - see [LICENSE](https://github.com/day50-dev/shurl/blob/main/LICENSE
 Made with ❤️ by <a href="https://github.com/day50-dev"><strong>DA`/50</strong></a>
 <br>
 <code>shurl --update --dry-run gh:day50-dev/shurl/examples/hello.sh</code>
+<br>
+<code>shurl --install gh:day50-dev/shurl/examples/hello.sh</code>
 </p>
