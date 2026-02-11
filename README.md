@@ -36,7 +36,6 @@ shurl --update gh:day50-dev/shurl/examples/hello.sh
 
 ### Quick install (recommended)
 ```bash
-# One-line install (auto-detects macOS/Linux)
 curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
 ```
 
