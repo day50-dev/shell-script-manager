@@ -4,12 +4,13 @@
 #        shurl gh:user/repo/file [args...]
 #        shurl --dry-run <url>     # Show what would be executed
 #        shurl --update <url>      # Force fresh download
+#        shurl --install <url>     # Install script to ~/.local/bin
 #        shurl --clear-cache
 #        shurl --version
 set -euo pipefail
 
 # Version
-VERSION="1.4.0"
+VERSION="1.5.0"
 
 # Detect OS and set cache directory
 detect_cache_dir() {
@@ -39,6 +40,7 @@ mkdir -p "$SHURL_CACHE"
 DRY_RUN=false
 FORCE_UPDATE=false
 QUIET=false
+INSTALL_MODE=false
 
 main() {
     if [[ $# -eq 0 ]]; then
@@ -63,14 +65,12 @@ main() {
                 ;;
             -*)
                 # Handle combined short flags (e.g., -nu, -nuq)
-                if [[ "$1" =~ ^-[nuqv]+$ ]]; then
+                if [[ "$1" =~ ^-[nuqvi]+$ ]]; then
                     [[ "$1" =~ n ]] && DRY_RUN=true
                     [[ "$1" =~ u ]] && FORCE_UPDATE=true
                     [[ "$1" =~ q ]] && QUIET=true
-                    if [[ "$1" =~ v ]]; then
-                        echo "shurl v$VERSION"
-                        return
-                    fi
+                    [[ "$1" =~ v ]] && echo "shurl v$VERSION" && return
+                    [[ "$1" =~ i ]] && INSTALL_MODE=true
                     shift
                 else
                     # Handle long flags
@@ -85,6 +85,10 @@ main() {
                             ;;
                         --quiet)
                             QUIET=true
+                            shift
+                            ;;
+                        --install)
+                            INSTALL_MODE=true
                             shift
                             ;;
                         *)
@@ -144,6 +148,12 @@ main() {
         fi
     fi
     
+    # Handle install mode
+    if [[ "$INSTALL_MODE" == true ]]; then
+        install_script "$cached_file" "$url"
+        return
+    fi
+    
     if [[ "$DRY_RUN" == true ]]; then
         # Show what would be executed
         echo "[dry-run] Would execute: $cached_file" >&2
@@ -183,6 +193,43 @@ main() {
     
     chmod +x "$cached_file"
     exec "$cached_file" "${args[@]}"
+}
+
+install_script() {
+    local cached_file="$1"
+    local url="$2"
+    
+    # Determine install directory
+    local install_dir="${HOME}/.local/bin"
+    
+    # Extract filename from URL
+    local script_name
+    script_name=$(basename "$url")
+    
+    # Remove query parameters if any
+    script_name="${script_name%%\?*}"
+    
+    # Remove .sh extension if present to make it more command-like
+    script_name="${script_name%.sh}"
+    
+    local install_path="${install_dir}/${script_name}"
+    
+    # Create install directory if it doesn't exist
+    if [[ "$DRY_RUN" == true ]]; then
+        echo "[dry-run] Would create directory: $install_dir" >&2
+    else
+        mkdir -p "$install_dir"
+    fi
+    
+    # Copy the file
+    if [[ "$DRY_RUN" == true ]]; then
+        echo "[dry-run] Would copy: $cached_file" >&2
+        echo "[dry-run] Would install to: $install_path" >&2
+    else
+        cp "$cached_file" "$install_path"
+        chmod +x "$install_path"
+        echo "$script_name is now available in $install_dir" >&2
+    fi
 }
 
 error_exit() {
@@ -307,6 +354,7 @@ Options:
   -n, --dry-run       Show what would be executed without running
   -u, --update        Force fresh download (ignore cache)
   -q, --quiet         Suppress non-error output
+  -i, --install       Install script to ~/.local/bin
   --clear-cache       Clear the shurl cache
 
 Short flags can be combined: -nu, -nuq, etc.
@@ -318,6 +366,7 @@ Examples:
   shurl -n gh:user/repo/setup.sh                # Preview execution
   shurl -nu gh:user/repo/setup.sh               # Preview fresh download
   shurl -q gh:user/repo/tool.sh                 # Quiet mode
+  shurl --install gh:user/repo/tool.sh          # Install tool
   shurl --clear-cache
 
 GitHub shorthand:
@@ -330,6 +379,9 @@ Cache location:
   macOS:   ~/Library/Caches/shurl
   Custom:  Set SHURL_CACHE environment variable
 
+Install location:
+  ~/.local/bin (ensure this is in your PATH)
+
 Output:
   By default, shurl shows status messages. Use -q for clean output.
   Errors always go to stderr. Script output goes to stdout.
@@ -338,6 +390,7 @@ Tips:
   • Use -q when piping/parsing script output
   • Use --update when you need the latest version
   • Use --dry-run to preview before execution
+  • Use --install to make a script available globally
   • shurl executes scripts (doesn't source them)
   • Variables/functions won't persist in your shell
   • Use --update for self-modifying scripts to pick up changes
