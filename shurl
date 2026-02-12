@@ -119,7 +119,7 @@ main() {
         error_exit "No URL provided.\n\nUsage: shurl [OPTIONS] <url> [args...]\nSee 'shurl --help' for more information."
     fi
     
-    local original_url="$1"
+    local user_input="$1"
     local url="$1"
     shift
     local args=("$@")
@@ -175,7 +175,7 @@ main() {
     
     # Handle install mode
     if [[ "$INSTALL_MODE" == true ]]; then
-        install_script "$cached_file" "$url" "$original_url"
+        install_script "$cached_file" "$url" "$user_input"
         return
     fi
     
@@ -223,7 +223,7 @@ main() {
 install_script() {
     local cached_file="$1"
     local url="$2"
-    local original_url="$3"
+    local user_input="$3"
     
     # Determine install directory
     local install_dir="${HOME}/.local/bin"
@@ -260,7 +260,7 @@ install_script() {
         # Update install list
         local today
         today=$(date +%Y-%m-%d)
-        local entry="${script_name} ${today} ${original_url}"
+        local entry="${script_name} ${today} ${url}"
         
         # Create install list file if it doesn't exist
         touch "$INSTALL_LIST_FILE"
@@ -467,7 +467,37 @@ list_installed() {
         return 0
     fi
     
-    cat "$INSTALL_LIST_FILE"
+    # Check if we have any entries
+    local entry_count
+    entry_count=$(wc -l < "$INSTALL_LIST_FILE" 2>/dev/null || echo 0)
+    
+    if [[ "$entry_count" -eq 0 ]]; then
+        echo "No installed packages found" >&2
+        return 0
+    fi
+    
+    # ANSI color codes
+    local reset="\033[0m"
+    local bold="\033[1m"
+    local green="\033[32m"
+    local yellow="\033[33m"
+    
+    echo ""
+    echo "  NAME                    DATE        URL"
+    echo "  ――――――――――――――――――――――――――――――――――――――――――――――――――"
+    
+    # Print each entry
+    while IFS= read -r line; do
+        # Parse the line: name date url
+        local name date url
+        name=$(echo "$line" | awk '{print $1}')
+        date=$(echo "$line" | awk '{print $2}')
+        url=$(echo "$line" | awk '{for(i=3;i<=NF;i++) printf $i (i<NF?" ":""); print ""}')
+        
+        printf "  ${bold}%-20s${reset} ${green}%-12s${reset} %s\n" "$name" "$date" "$url"
+    done < "$INSTALL_LIST_FILE"
+    
+    echo ""
 }
 
 main "$@"
