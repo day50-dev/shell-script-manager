@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shurl v1.4.0 - download and execute shell scripts with GitHub shorthand support
+# shurl v0.6.0 - download and execute shell scripts with GitHub shorthand support
 # Usage: shurl <url> [args...]
 #        shurl gh:user/repo/file [args...]
 #        shurl --dry-run <url>     # Show what would be executed
