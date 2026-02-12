@@ -1,10 +1,9 @@
-# shurl
+<p align="center">
+  <img width="421" height="239" alt="shurl-logo" src="https://github.com/user-attachments/assets/22ac3f71-2b08-49af-9f0a-4eb8ff204aaa" />
+<br/><strong>Like npx or uvx, but for shell scripts</strong>
+</p>
 
-**Like npx or uvx, but for shell scripts.**
-
-## What is it?
-
-shurl is a simple tool that runs shell scripts from URLs. Think of it as a better alternative to `curl https://example.com/script.sh | bash`.
+**shurl** is a simple tool that runs shell scripts from URLs. Think of it as a better alternative to `curl https://example.com/script.sh | bash`.
 
 It caches scripts locally so you don't download them every time, supports GitHub shorthand, passes arguments correctly, and has a dry-run mode to preview what will execute.
 
