@@ -13,7 +13,7 @@ It caches scripts locally so you don't download them every time, supports GitHub
 curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/refs/heads/main/install.sh | bash
 ```
 
-Ant that's the last time you'll ever have to curl and bash.
+That's the last time you'll ever have to curl and bash.
 
 ## Quick Start
 
