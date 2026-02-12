@@ -49,6 +49,21 @@ shurl --update gh:day50-dev/shurl/examples/hello.sh
 
 ## Usage
 
+### List installed packages (new in v1.5.0!)
+```bash
+# List all packages installed via shurl --install
+shurl --list
+
+# Short form
+shurl -l
+
+# Example output:
+# free-ollama 2026-02-12 gh:kristopolous/free-ollama/free-ollama
+# my-tool 2026-02-10 https://example.com/tool.sh
+```
+
+The list shows the package name, installation date, and the original URL (preserving GitHub shorthand if used).
+
 ### Basic usage
 ```bash
 # Run any shell script from a URL
@@ -119,6 +134,9 @@ Dry-run shows:
 # Force fresh download (ignore cache)
 shurl --update gh:user/repo/script.sh
 shurl -u https://example.com/install.sh  # -u is short for --update
+
+# Update by package name (looks up from install list)
+shurl -u free-ollama  # Updates the installed package
 
 # Update and run with arguments
 shurl --update gh:company/tools/deploy.sh --env production
@@ -313,7 +331,20 @@ When you use `--install`, `shurl`:
 2. Extracts a clean name from the URL (removes `.sh` extension)
 3. Copies it to `~/.local/bin/`
 4. Makes it executable
-5. Shows you: `"tool-name is now available in /home/user/.local/bin"`
+5. Records the installation in `~/.cache/shurl/install-list.txt`
+6. Shows you: `"tool-name is now available in /home/user/.local/bin"`
+
+### How does --update with package names work?
+When you run `shurl -u <package-name>` with a name instead of a URL:
+1. Looks up the package in `~/.cache/shurl/install-list.txt`
+2. Finds the original URL used during installation
+3. Uses that URL to download and update the cached version
+4. If not found, tries to treat the argument as a URL anyway
+
+This makes it easy to update installed tools by their simple name:
+```bash
+shurl -u my-tool  # Updates "my-tool" using the stored URL
+```
 
 ## Contributing
 
