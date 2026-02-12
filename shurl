@@ -41,6 +41,7 @@ DRY_RUN=false
 FORCE_UPDATE=false
 QUIET=false
 INSTALL_MODE=false
+LIST_MODE=false
 
 main() {
     if [[ $# -eq 0 ]]; then
@@ -91,6 +92,10 @@ main() {
                             INSTALL_MODE=true
                             shift
                             ;;
+                        --list)
+                            LIST_MODE=true
+                            shift
+                            ;;
                         *)
                             error_exit "Unknown option: $1\n\nSee 'shurl --help' for usage."
                             ;;
@@ -102,6 +107,11 @@ main() {
                 ;;
         esac
     done
+    
+    if [[ "$LIST_MODE" == true ]]; then
+        list_installed
+        return
+    fi
     
     if [[ $# -eq 0 ]]; then
         error_exit "No URL provided.\n\nUsage: shurl [OPTIONS] <url> [args...]\nSee 'shurl --help' for more information."
@@ -355,6 +365,7 @@ Options:
   -u, --update        Force fresh download (ignore cache)
   -q, --quiet         Suppress non-error output
   -i, --install       Install script to ~/.local/bin
+  --list              List installed packages
   --clear-cache       Clear the shurl cache
 
 Short flags can be combined: -nu, -nuq, etc.
@@ -396,6 +407,27 @@ Tips:
   • Use --update for self-modifying scripts to pick up changes
 
 EOF
+}
+
+list_installed() {
+    local install_dir="${HOME}/.local/bin"
+    
+    if [[ ! -d "$install_dir" ]]; then
+        echo "No installed packages found (directory doesn't exist: $install_dir)" >&2
+        return 0
+    fi
+    
+    local packages
+    packages=($(find "$install_dir" -type f -executable 2>/dev/null | sort))
+    
+    if [[ ${#packages[@]} -eq 0 ]]; then
+        echo "No installed packages found in: $install_dir" >&2
+    else
+        echo "Installed packages in $install_dir:"
+        for pkg in "${packages[@]}"; do
+            echo "  $(basename "$pkg")"
+        done
+    fi
 }
 
 main "$@"
