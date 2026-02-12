@@ -137,14 +137,6 @@ install_shurl() {
                 info "Current version: $current_version"
             fi
         fi
-        
-        echo -n "Overwrite? [y/N] "
-        read -r response
-        if [[ ! "$response" =~ ^[Yy] ]]; then
-            info "Installation cancelled"
-            cleanup
-            exit 0
-        fi
     fi
     
     # Copy file
