@@ -312,8 +312,15 @@ expand_github_shorthand() {
         local file_path="${BASH_REMATCH[5]}"
         
         echo "https://raw.githubusercontent.com/${user}/${repo}/${branch}/${file_path}"
+    # Try to parse as user/repo (no file path) - assume file name matches repo name
+    elif [[ "$path" =~ ^([^/]+)/([^/@]+)(@([^/]+))?$ ]]; then
+        local user="${BASH_REMATCH[1]}"
+        local repo="${BASH_REMATCH[2]}"
+        local branch="${BASH_REMATCH[4]:-main}"
+        
+        echo "https://raw.githubusercontent.com/${user}/${repo}/${branch}/${repo}"
     else
-        error_exit "Invalid GitHub shorthand: '$shorthand'\n\nFormat should be: gh:user/repo/file\nOr with branch: gh:user/repo@branch/file\n\nExamples:\n  gh:day50-dev/shurl/examples/hello.sh\n  gh:user/repo@develop/setup.sh"
+        error_exit "Invalid GitHub shorthand: '$shorthand'\n\nFormat should be: gh:user/repo/file\nOr with branch: gh:user/repo@branch/file\nOr just repo: gh:user/repo (expands to gh:user/repo/repo)\n\nExamples:\n  gh:day50-dev/shurl/shurl\n  gh:day50-dev/shurl@main/shurl\n  gh:day50-dev/shurl  (expands to gh:day50-dev/shurl/shurl)"
     fi
 }
 
