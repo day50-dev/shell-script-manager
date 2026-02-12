@@ -35,6 +35,14 @@ shurl --dry-run gh:user/repo/script.sh
 shurl --update gh:user/repo/script.sh
 ```
 
+If the script has the common format: ` user/<x>/<x> ` it can be shortened, just drop the second `<x>`
+
+For instance, updating shurl is:
+
+```
+$ shurl -iu gh:day50-dev/shurl
+```
+
 ## Why use this?
 
 - **No copy-paste**: One command, no manual downloads
