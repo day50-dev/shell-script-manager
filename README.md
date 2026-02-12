@@ -1,379 +1,226 @@
-# shurl 🚀
+# shurl
 
-**Like `npx` and `uvx`, but for shell scripts.**
+**Like npx or uvx, but for shell scripts.**
 
 ## What is it?
 
-`shurl` is a minimal tool that fetches and executes shell scripts from URLs. Think of it as `curl <url> | bash` but with caching, GitHub shorthand, proper argument passing, and safety features.
+shurl is a simple tool that runs shell scripts from URLs. Think of it as a better alternative to `curl https://example.com/script.sh | bash`.
 
-If you're familiar with:
-- `npx` - runs npm packages without installation
-- `uvx` - runs Python tools without installation
-- `deno run` - runs TypeScript/JavaScript from URLs
-
-Then `shurl` is the shell script equivalent.
+It caches scripts locally so you don't download them every time, supports GitHub shorthand, passes arguments correctly, and has a dry-run mode to preview what will execute.
 
 ## Installation
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/refs/heads/main/install.sh | bash
 ```
-That will be the last time you'll ever have to do that.
 
-**With custom location:**
-```bash
-# Install to specific directory
-INSTALL_DIR=/opt/bin curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
-
-# macOS Homebrew users
-INSTALL_DIR=/opt/homebrew/bin curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
-```
+Ant that's the last time you'll ever have to curl and bash.
 
 ## Quick Start
 
 ```bash
-# Install shurl (one-liner)
-curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/refs/heads/main/install.sh | bash
+# Run a script from a URL
+shurl https://example.com/script.sh
 
-# Run a script
-shurl gh:day50-dev/shurl/examples/hello.sh
+# Use GitHub shorthand (way easier to read)
+shurl gh:user/repo/script.sh
 
-# Install a tool globally (like pipx/uvx install)
+# Install a tool so you can run it like a normal command
 shurl --install gh:user/repo/tool.sh
+tool.sh --help  # available everywhere now
 
-# Preview before running (safety first!)
-shurl --dry-run gh:day50-dev/shurl/examples/hello.sh
+# See what would run without actually executing
+shurl --dry-run gh:user/repo/script.sh
 
-# Force fresh download
-shurl --update gh:day50-dev/shurl/examples/hello.sh
+# Update a cached script (force fresh download)
+shurl --update gh:user/repo/script.sh
 ```
+
+## Why use this?
+
+- **No copy-paste**: One command, no manual downloads
+- **Caching**: First run downloads, every run after is instant (local file)
+- **GitHub shorthand**: `gh:user/repo/file` is much nicer than the raw URL
+- **Safer than curl|bash**: Saves to disk first, you can inspect it
+- **Works like npx/uvx**: Install scripts to `~/.local/bin` and use them as commands
+- **Portable**: Works on macOS, Linux, BSD anywhere with bash
 
 ## Usage
 
-### List installed packages (new in v1.5.0!)
+### Running scripts
+
 ```bash
-# List all packages installed via shurl --install
-shurl --list
+# Direct URL
+shurl https://example.com/setup.sh
 
-# Short form
-shurl -l
-
-# Example output:
-# free-ollama 2026-02-12 gh:kristopolous/free-ollama/free-ollama
-# my-tool 2026-02-10 https://example.com/tool.sh
-```
-
-The list shows the package name, installation date, and the original URL (preserving GitHub shorthand if used).
-
-### Basic usage
-```bash
-# Run any shell script from a URL
-shurl https://example.com/script.sh
-
-# Pass arguments to the script
+# With arguments (passed through to the script)
 shurl https://example.com/tool.sh install --verbose arg1 arg2
+
+# GitHub shorthand
+shurl gh:myorg/scripts/dev-setup.sh
+
+# With branch specification
+shurl gh:myorg/scripts@develop/deploy.sh
+shurl gh:user/repo@v1.2.3/install.sh
 ```
 
-### Install tools globally (new in v1.4.0!)
-Like `pipx install` or `uvx install`, install scripts as standalone commands:
+### Installing tools
 
 ```bash
-# Install a tool to ~/.local/bin
+# Install a script as a permanent command
 shurl --install gh:user/repo/tool.sh
+# Now you can run: tool.sh (or just 'tool' if the URL ends in .sh)
 
-# Force fresh download and install
+# Update and install fresh
 shurl --update --install gh:user/repo/tool.sh
 
 # Preview what would be installed
 shurl --dry-run --install gh:user/repo/tool.sh
 ```
 
-After installation, you can run the tool directly:
-```bash
-# Install it once
-shurl --install gh:user/repo/weather-cli.sh
+After installing, the tool is in `~/.local/bin`. Add that to your PATH if it isn't already.
 
-# Use it like any other command
-weather-cli new-york
+### Listing installed packages
+
+```bash
+# See everything you've installed with shurl
+shurl --list
+shurl -l
+
+# Output format: name date url
+# my-tool    2026-02-12  gh:user/my-tool.sh
+# weather    2026-02-10  https://example.com/weather.sh
 ```
 
-### GitHub shorthand
-The `gh:` prefix expands GitHub URLs automatically:
+### Updating
 
 ```bash
-# These are equivalent:
-shurl gh:user/repo/script.sh
-shurl https://raw.githubusercontent.com/user/repo/main/script.sh
-
-# Specify a branch with @ syntax
-shurl gh:user/repo@develop/setup.sh
-shurl gh:user/repo@v1.2.3/install.sh
-
-# Nested paths work too
-shurl gh:docker/compose/contrib/completion/bash/docker-compose
-```
-
-### Dry-run (safety feature!)
-```bash
-# Preview what would happen without executing
-shurl --dry-run gh:user/repo/script.sh
-shurl -n https://example.com/install.sh  # -n is short for --dry-run
-
-# Preview with arguments
-shurl --dry-run gh:user/repo/setup.sh --verbose --force
-```
-
-Dry-run shows:
-- What URL would be downloaded
-- Where it would be cached
-- What arguments would be passed
-- First 10 lines of the script (if cached)
-- Cache directory information
-
-### Update (get fresh versions)
-```bash
-# Force fresh download (ignore cache)
+# Update by URL
 shurl --update gh:user/repo/script.sh
-shurl -u https://example.com/install.sh  # -u is short for --update
+shurl -u https://example.com/install.sh
 
-# Update by package name (looks up from install list)
-shurl -u free-ollama  # Updates the installed package
+# Update by package name (if installed via --install)
+shurl -u my-tool  # looks up the URL from install list
 
 # Update and run with arguments
 shurl --update gh:company/tools/deploy.sh --env production
 
-# Preview what would be updated
+# Preview the update
 shurl --dry-run --update gh:user/repo/setup.sh
 ```
 
-### Cache management
+### Other options
+
 ```bash
 # Clear the cache
 shurl --clear-cache
 
-# View cache location
-echo $SHURL_CACHE
+# Quiet mode (less output)
+shurl -q gh:user/repo/script.sh
 
-# Custom cache directory
-SHURL_CACHE=/tmp/my-cache shurl gh:user/repo/script.sh
+# Show version
+shurl --version
+
+# Show help
+shurl --help
+```
+
+You can combine short flags: `-nuq` (dry-run + update + quiet), `-iu` (install + update), etc.
+
+## How it works
+
+1. You give it a URL (or GitHub shorthand)
+2. It checks if the script is already cached (by URL hash)
+3. If not cached or `--update` flag: downloads with curl or wget
+4. Saves to cache directory (`~/.cache/shurl` on Linux, `~/Library/Caches/shurl` on macOS)
+5. Makes it executable and runs it (or copies to `~/.local/bin` if `--install`)
+6. If installing, also records it in `~/.cache/shurl/install-list.txt` so you can update by name later
+
+## Cache and install locations
+
+| Platform | Cache | Install (`--install`) |
+|----------|-------|----------------------|
+| Linux | `~/.cache/shurl` | `~/.local/bin` |
+| macOS | `~/Library/Caches/shurl` | `~/.local/bin` |
+| BSD | `~/.cache/shurl` | `~/.local/bin` |
+
+Override cache location with `SHURL_CACHE` environment variable.
+
+## Safety notes
+
+- **Not as safe as reading the script first**: Always use `--dry-run` with untrusted sources
+- **Scripts run with your permissions**: They can do anything you can do
+- **No sandbox**: This is raw bash execution
+- **Still better than curl|bash**: At least you can inspect the cached file afterward
+
+Recommended workflow for unknown scripts:
+```bash
+shurl --dry-run <url>      # see what it does
+cat ~/.cache/shurl/*.sh    # inspect the cached version
+shurl <url>                # run if you're comfortable
 ```
 
 ## Examples
 
-### Try the example scripts
 ```bash
-# Basic hello world with the day50 logo
-shurl gh:day50-dev/shurl/examples/hello.sh
-
-# Colorful demonstration
-shurl gh:day50-dev/shurl/examples/colors.sh
-
-# Force update example
-shurl --update gh:day50-dev/shurl/examples/hello.sh
-```
-
-### Real-world use cases
-```bash
-# Common installers (hypothetical)
+# Quick Docker install (hypothetical)
 shurl https://get.docker.com
+
+# Rust installer
 shurl https://sh.rustup.rs
 
-# Development workflows
-shurl gh:myteam/scripts/dev-setup.sh
-shurl --update gh:org/tools@develop/deploy.sh --env production  # Get latest
+# Team dev setup
+shurl gh:myorg/dev/setup.sh
 
-# Install and use tools permanently
-shurl --install gh:cli/tools/weather.sh
-weather --location "New York"
+# Install a CLI tool and use it
+shurl --install gh:cli-tools/git-branch-manager.sh
+git-branch-manager list
 
-# CI/CD pipelines
-shurl -n gh:external/vendor/install.sh  # Preview before running!
+# Update that tool later
+shurl -u git-branch-manager
+
+# CI/CD usage
+shurl --update gh:org/ci/setup.sh
+shurl gh:org/ci/test.sh
 ```
 
-### In CI/CD pipelines
-```yaml
-# GitHub Actions example
-- name: Setup environment
-  run: |
-    # Always get latest version
-    shurl --update gh:myorg/ci-scripts/ubuntu-setup.sh
-    shurl gh:myorg/ci-scripts/install-deps.sh
+## FAQ
 
-- name: Deploy with safety checks
-  run: |
-    # Safety check first
-    shurl --dry-run gh:myorg/deploy-scripts/deploy.sh ${{ github.ref_name }}
-    # Then run for real
-    shurl --update gh:myorg/deploy-scripts/deploy.sh ${{ github.ref_name }}
-```
+**Q: How is this different from `curl | bash`?**  
+A: shurl caches scripts locally so you don't re-download every time, supports GitHub shorthand, passes arguments properly, has dry-run mode, and can install tools to your PATH. Also it's safer because you can inspect the cached file.
 
-## How it works
-
-1. **Parse input**: Expands `gh:` shorthand to full GitHub URLs
-2. **Check cache**: Looks in platform-appropriate cache directory
-3. **Check --update**: If specified, deletes cached version
-4. **Download if needed**: Uses `curl` or `wget` to fetch script
-5. **Cache**: Saves with SHA256 hash as filename
-6. **Execute**: Makes executable and runs with arguments
-7. **Install**: When using `--install`, copies to `~/.local/bin` for permanent use
-
-## Platform Support
-
-### macOS
-- Installs to: `~/.local/bin` (preferred) or `/usr/local/bin`
-- Cache directory: `~/Library/Caches/shurl`
-- Install location: `~/.local/bin` for `--install`
-- Add to PATH: Add to `~/.zshrc` or `~/.bash_profile`
-
-### Linux/BSD
-- Installs to: `~/.local/bin` (XDG standard) or `/usr/local/bin`
-- Cache directory: `~/.cache/shurl` (XDG_CACHE_HOME)
-- Install location: `~/.local/bin` for `--install`
-- Add to PATH: Add to `~/.bashrc` or `~/.zshrc`
-
-### Other Unix-like
-- Falls back to `~/.local/bin` and `~/.cache/shurl`
-
-## Security & Safety
-
-### Safety features
-1. **No pipe execution**: Unlike `curl | bash`, scripts are saved to disk first
-2. **Cache inspection**: You can review cached scripts at any time
-3. **Dry-run mode**: Preview before execution
-4. **Update control**: Choose when to get fresh versions
-5. **Explicit permissions**: Scripts are made executable only when run
-6. **Install verification**: `--dry-run` shows what would be installed
-
-### Best practices
+**Q: Can I use private GitHub repos?**  
+A: Yes, set `GITHUB_TOKEN` environment variable:
 ```bash
-# Always preview unknown scripts
-shurl --dry-run https://unknown.com/script.sh
-
-# Preview before installing
-shurl --dry-run --install gh:new/tool/installer.sh
-
-# Force updates for critical scripts
-shurl --update gh:security/patches/apply.sh
-
-# Review cached scripts
-ls -la ~/.cache/shurl/  # Linux
-ls -la ~/Library/Caches/shurl/  # macOS
-
-# Review installed tools
-ls -la ~/.local/bin/ | grep ".sh"
-
-# Clear cache if unsure
-shurl --clear-cache
+GITHUB_TOKEN=xxx shurl https://raw.githubusercontent.com/private/repo/main/script.sh
 ```
 
-## When to use --install vs run
+**Q: What if I don't have `~/.local/bin` in my PATH?**  
+A: Add it: `export PATH="$HOME/.local/bin:$PATH"` (put that in your shell config)
 
-- **Use `shurl <url>`**: For one-time scripts, installers, or ephemeral tasks
-- **Use `shurl --install <url>`**: For tools you'll use regularly, similar to `pipx install`
-- **Use `--dry-run` first**: Always preview before installing
+**Q: How do I uninstall something?**  
+A: `rm ~/.local/bin/<tool-name>` and remove the line from `~/.cache/shurl/install-list.txt`
 
-## Environment Variables
+**Q: Does it work on Windows?**  
+A: Only if you have bash (WSL, Git Bash, Cygwin). Not native Windows.
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `SHURL_CACHE` | Platform-specific | Custom cache directory |
-| Script env vars | | Passed through to executed scripts |
+**Q: What about dependencies?**  
+A: shurl just runs scripts. If your script needs dependencies, handle that in the script itself.
 
 ## Uninstallation
 
 ```bash
-# Remove the binary
-rm ~/.local/bin/shurl  # or wherever installed
+# Remove shurl itself
+rm ~/.local/bin/shurl
 
 # Clear cache (optional)
 rm -rf ~/.cache/shurl      # Linux/BSD
 rm -rf ~/Library/Caches/shurl  # macOS
 
 # Remove installed tools (optional)
-# Check what was installed via shurl
-ls -la ~/.local/bin/ | grep ".sh"
+# Check what you installed:
+shurl -l
+# Then remove individual tools from ~/.local/bin
 ```
 
-## FAQ
 
-### Is it safe?
-**Safer than `curl | bash`** but you should still:
-- Use `--dry-run` to preview scripts
-- Use `--dry-run --install` to preview installations
-- Review scripts from untrusted sources
-- Clear cache if something seems suspicious
-
-### When should I use --update vs --clear-cache?
-- `--update`: Updates one specific script
-- `--clear-cache`: Removes ALL cached scripts
-
-### Can I use private repositories?
-For private GitHub repos, you'll need to add authentication:
-```bash
-# With GitHub token
-GITHUB_TOKEN=your_token shurl https://raw.githubusercontent.com/private/repo/main/script.sh
-```
-
-Better: Create a wrapper script that adds auth headers.
-
-### What if I get "command not found"?
-Ensure `~/.local/bin` is in your PATH:
-```bash
-# Temporary fix
-export PATH="$HOME/.local/bin:$PATH"
-
-# Permanent fix (add to your shell config)
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc  # or ~/.zshrc
-```
-
-### How does --install work?
-When you use `--install`, `shurl`:
-1. Downloads and caches the script (like normal)
-2. Extracts a clean name from the URL (removes `.sh` extension)
-3. Copies it to `~/.local/bin/`
-4. Makes it executable
-5. Records the installation in `~/.cache/shurl/install-list.txt`
-6. Shows you: `"tool-name is now available in /home/user/.local/bin"`
-
-### How does --update with package names work?
-When you run `shurl -u <package-name>` with a name instead of a URL:
-1. Looks up the package in `~/.cache/shurl/install-list.txt`
-2. Finds the original URL used during installation
-3. Uses that URL to download and update the cached version
-4. If not found, tries to treat the argument as a URL anyway
-
-This makes it easy to update installed tools by their simple name:
-```bash
-shurl -u my-tool  # Updates "my-tool" using the stored URL
-```
-
-## Contributing
-
-Found a bug? Want a feature? Contributions welcome!
-
-1. Fork the repo: https://github.com/day50-dev/shurl
-2. Create a feature branch
-3. Submit a pull request
-
-## License
-
-MIT License - see [LICENSE](https://github.com/day50-dev/shurl/blob/main/LICENSE)
-
----
-
-## Similar Projects
-
-- [npx](https://docs.npmjs.com/cli/v8/commands/npx) - npm package runner
-- [uvx](https://docs.astral.sh/uv/concepts/tools/) - Python tool runner from Astral
-- [deno run](https://deno.land/manual@v1.43.6/basics/modules) - Run code from URLs
-- [basher](https://github.com/basherpm/basher) - Package manager for shell scripts
-
----
-
-<p align="center">
-Made with ❤️ by <a href="https://github.com/day50-dev"><strong>DA`/50</strong></a>
-<br>
-<code>shurl --update --dry-run gh:day50-dev/shurl/examples/hello.sh</code>
-<br>
-<code>shurl --install gh:day50-dev/shurl/examples/hello.sh</code>
-</p>
