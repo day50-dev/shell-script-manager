@@ -13,11 +13,26 @@ If you're familiar with:
 
 Then `shurl` is the shell script equivalent.
 
+## Installation
+
+```bash
+curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/refs/heads/main/install.sh | bash
+```
+
+**With custom location:**
+```bash
+# Install to specific directory
+INSTALL_DIR=/opt/bin curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
+
+# macOS Homebrew users
+INSTALL_DIR=/opt/homebrew/bin curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
+```
+
 ## Quick Start
 
 ```bash
 # Install shurl (one-liner)
-curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/refs/heads/main/install.sh | bash
 
 # Run a script
 shurl gh:day50-dev/shurl/examples/hello.sh
@@ -30,40 +45,6 @@ shurl --dry-run gh:day50-dev/shurl/examples/hello.sh
 
 # Force fresh download
 shurl --update gh:day50-dev/shurl/examples/hello.sh
-```
-
-## Installation
-
-### Quick install (recommended)
-```bash
-curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
-```
-
-### Alternative installation methods
-
-**Direct download:**
-```bash
-# To ~/.local/bin (Unix standard)
-curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/main/shurl -o ~/.local/bin/shurl
-chmod +x ~/.local/bin/shurl
-
-# Ensure ~/.local/bin is in your PATH
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-**With custom location:**
-```bash
-# Install to specific directory
-INSTALL_DIR=/opt/bin curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
-
-# macOS Homebrew users
-INSTALL_DIR=/opt/homebrew/bin curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
-```
-
-### Verify installation
-```bash
-shurl --version
-shurl --help
 ```
 
 ## Usage
