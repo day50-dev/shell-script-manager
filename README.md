@@ -18,6 +18,7 @@ Then `shurl` is the shell script equivalent.
 ```bash
 curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/refs/heads/main/install.sh | bash
 ```
+That will be the last time you'll ever have to do that.
 
 **With custom location:**
 ```bash
