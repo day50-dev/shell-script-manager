@@ -38,6 +38,8 @@ GUARD_CHROOT_ROOT=""
 GUARD_DOCKER_IMAGE="alpine:latest"
 
 main() {
+    local is_local_file=false
+
     if [[ $# -eq 0 ]]; then
         show_help
         exit 1
@@ -114,6 +116,7 @@ main() {
     
     local user_input="$1"
     local url="$1"
+    local shurl_url="$url"
     shift
     local args=("$@")
     
@@ -124,20 +127,27 @@ main() {
         if [[ -n "$lookup_url" ]]; then
             [[ "$QUIET" != true ]] && echo "Found installed package '$url' -> $lookup_url" >&2
             url="$lookup_url"
+            shurl_url="$lookup_url"
         else
             [[ "$QUIET" != true ]] && echo "Warning: '$url' not found in install list, trying as URL anyway" >&2
         fi
     fi
     
     # Check if this is a local file (before gh: expansion)
-    local is_local_file=false
     if [[ ! "$url" =~ ^gh: ]] && [[ -f "$url" ]]; then
         is_local_file=true
     fi
     
     # Expand GitHub shorthand if needed (only if not a local file)
-    if [[ "$is_local_file" != true ]] && [[ "$url" =~ ^gh: ]]; then
-        url=$(expand_github_shorthand "$url")
+    if [[ "$is_local_file" != true ]]; then 
+        if ! [[ "$url" =~ ^gh: ]]; then
+            lookup_url=$(lookup_installed_url "$url")
+            [[ -n "$lookup_url" ]] && url="$lookup_url"
+        fi
+        # do not else here, the code above is a potential resolver
+        if [[ "$url" =~ ^gh: ]]; then
+            url=$(expand_github_shorthand "$url")
+        fi
     fi
     
     # Create cache key from URL
@@ -182,7 +192,7 @@ main() {
     
     # Handle install mode
     if [[ "$INSTALL_MODE" == true ]]; then
-        install_script "$cached_file" "$url" "$user_input"
+        install_script "$cached_file" "$shurl_url" "$user_input"
         return
     fi
     
@@ -469,8 +479,6 @@ lookup_installed_url() {
         echo "$url"
         return 0
     fi
-    
-    return 1
 }
 
 show_cache_info() {
