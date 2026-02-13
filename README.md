@@ -33,6 +33,10 @@ shurl --dry-run gh:user/repo/script.sh
 
 # Update a cached script (force fresh download)
 shurl --update gh:user/repo/script.sh
+
+# Run with guard (isolation)
+shurl --guard chroot gh:user/repo/script.sh
+shurl --guard docker gh:user/repo/script.sh
 ```
 
 If the script has the common format: ` user/<x>/<x> ` it can be shortened, just drop the second `<x>`
@@ -53,9 +57,23 @@ $ shurl -u shurl
 - **Caching**: First run downloads, every run after is instant (local file)
 - **GitHub shorthand**: `gh:user/repo/file` is much nicer than the raw URL
 - **Works like npx/uvx**: Install scripts to `~/.local/bin` and use them as commands
+- **Isolation guards**: Run scripts in chroot or Docker containers
 - **Portable**: Works on macOS, Linux, BSD anywhere with bash
 
 ## Usage
+
+### Running scripts with isolation guards
+
+```bash
+# Run script in a chroot environment (requires root)
+shurl --guard chroot gh:user/repo/script.sh
+
+# Run script in Docker container
+shurl --guard docker gh:user/repo/script.sh
+
+# Preview guard execution
+shurl --dry-run --guard docker gh:user/repo/script.sh
+```
 
 ### Running scripts
 
@@ -172,6 +190,10 @@ shurl <url>                # run if you're comfortable
 ## Examples
 
 ```bash
+# Run with guard (isolation)
+shurl --guard docker gh:user/repo/script.sh
+shurl --guard chroot gh:user/repo/tool.sh
+
 # Quick Docker install (hypothetical)
 shurl https://get.docker.com
 
@@ -215,6 +237,15 @@ A: Only if you have bash (WSL, Git Bash, Cygwin). Not native Windows.
 
 **Q: What about dependencies?**  
 A: shurl just runs scripts. If your script needs dependencies, handle that in the script itself.
+
+**Q: How do guards work?**  
+A: Guards provide isolation:
+- `--guard chroot` runs scripts in a chroot environment (requires root, setup required)
+- `--guard docker` runs scripts in a Docker container (requires Docker daemon)
+- Use `--dry-run` with guards to preview what would execute
+
+**Q: Do I need special permissions for guards?**  
+A: chroot requires root (`sudo`), docker requires your user to be in the docker group or root access.
 
 ## Uninstallation
 
