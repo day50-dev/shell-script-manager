@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# shurl v0.6.0 - download and execute shell scripts with GitHub shorthand support
+# shurl v0.7.0 - download and execute shell scripts with GitHub shorthand support
 # Usage: shurl <url> [args...]
 #        shurl gh:user/repo/file [args...]
+#        shurl path/to/local/file [args...]
 #        shurl --dry-run <url>     # Show what would be executed
 #        shurl --update <url>      # Force fresh download
 #        shurl --install <url>     # Install script to ~/.local/bin
 #        shurl --clear-cache
 #        shurl --version
+#        shurl --guard <type>      # Run through container/guard (chroot, docker)
 set -euo pipefail
 
 # Version
@@ -43,6 +45,9 @@ FORCE_UPDATE=false
 QUIET=false
 INSTALL_MODE=false
 LIST_MODE=false
+GUARD_TYPE=""
+GUARD_CHROOT_ROOT=""
+GUARD_DOCKER_IMAGE="alpine:latest"
 
 main() {
     if [[ $# -eq 0 ]]; then
@@ -64,6 +69,30 @@ main() {
             --clear-cache)
                 clear_cache
                 return
+                ;;
+            --guard)
+                if [[ -z "${2:-}" ]] || [[ "${2:-}" =~ ^-- ]]; then
+                    error_exit "--guard requires a type: chroot or docker\n\nExample: shurl --guard chroot gh:user/repo/script.sh"
+                fi
+                GUARD_TYPE="$2"
+                if [[ "$GUARD_TYPE" != "chroot" ]] && [[ "$GUARD_TYPE" != "docker" ]]; then
+                    error_exit "Unknown guard type: $GUARD_TYPE\n\nSupported types: chroot, docker"
+                fi
+                shift 2
+                ;;
+            --chroot-root)
+                if [[ -z "${2:-}" ]]; then
+                    error_exit "--chroot-root requires a path"
+                fi
+                GUARD_CHROOT_ROOT="$2"
+                shift 2
+                ;;
+            --docker-image)
+                if [[ -z "${2:-}" ]]; then
+                    error_exit "--docker-image requires an image name"
+                fi
+                GUARD_DOCKER_IMAGE="$2"
+                shift 2
                 ;;
             -*)
                 # Handle combined short flags (e.g., -nu, -nuq)
@@ -136,8 +165,14 @@ main() {
         fi
     fi
     
-    # Expand GitHub shorthand if needed
-    if [[ "$url" =~ ^gh: ]]; then
+    # Check if this is a local file (before gh: expansion)
+    local is_local_file=false
+    if [[ ! "$url" =~ ^gh: ]] && [[ -f "$url" ]]; then
+        is_local_file=true
+    fi
+    
+    # Expand GitHub shorthand if needed (only if not a local file)
+    if [[ "$is_local_file" != true ]] && [[ "$url" =~ ^gh: ]]; then
         url=$(expand_github_shorthand "$url")
     fi
     
@@ -146,36 +181,49 @@ main() {
     cache_key=$(get_cache_key "$url")
     local cached_file="$SHURL_CACHE/$cache_key.sh"
     
-    # Check if we should update
-    if [[ "$FORCE_UPDATE" == true ]]; then
+    # If it's a local file, use it directly
+    if [[ "$is_local_file" == true ]]; then
+        cached_file="$(cd "$(dirname "$url")" && pwd)/$(basename "$url")"
         if [[ "$DRY_RUN" == true ]]; then
-            echo "[dry-run] Would force update: $url" >&2
-            echo "[dry-run] Would delete cached file: $cached_file" >&2
-        else
-            [[ "$QUIET" != true ]] && echo "Forcing update for: $url" >&2
-            if [[ -f "$cached_file" ]]; then
-                rm -f "$cached_file"
+            echo "[dry-run] Using local file: $cached_file" >&2
+        fi
+    else
+        # Check if we should update
+        if [[ "$FORCE_UPDATE" == true ]]; then
+            if [[ "$DRY_RUN" == true ]]; then
+                echo "[dry-run] Would force update: $url" >&2
+                echo "[dry-run] Would delete cached file: $cached_file" >&2
+            else
+                [[ "$QUIET" != true ]] && echo "Forcing update for: $url" >&2
+                if [[ -f "$cached_file" ]]; then
+                    rm -f "$cached_file"
+                fi
             fi
         fi
-    fi
-    
-    # Download if not cached or forced update
-    if [[ ! -f "$cached_file" ]]; then
-        if [[ "$DRY_RUN" == true ]]; then
-            echo "[dry-run] Would download: $url" >&2
-            echo "[dry-run] Would save to: $cached_file" >&2
-            # Download anyway for preview
-            echo "[dry-run] Downloading for preview..." >&2
-            download "$url" "$cached_file"
-        else
-            [[ "$QUIET" != true ]] && echo "Downloading: $url" >&2
-            download "$url" "$cached_file"
+        
+        # Download if not cached or forced update
+        if [[ ! -f "$cached_file" ]]; then
+            if [[ "$DRY_RUN" == true ]]; then
+                echo "[dry-run] Would download: $url" >&2
+                echo "[dry-run] Would save to: $cached_file" >&2
+                # Download anyway for preview
+                echo "[dry-run] Downloading for preview..." >&2
+                download "$url" "$cached_file"
+            else
+                [[ "$QUIET" != true ]] && echo "Downloading: $url" >&2
+                download "$url" "$cached_file"
+            fi
         fi
     fi
     
     # Handle install mode
     if [[ "$INSTALL_MODE" == true ]]; then
         install_script "$cached_file" "$url" "$user_input"
+        return
+    fi
+    
+    if [[ -n "$GUARD_TYPE" ]]; then
+        run_with_guard "$cached_file" "${args[@]}"
         return
     fi
     
@@ -280,6 +328,94 @@ install_script() {
         # Append new entry
         echo "$entry" >> "$INSTALL_LIST_FILE"
     fi
+}
+
+run_with_guard() {
+    local script_file="$1"
+    shift
+    local args=("$@")
+    
+    case "$GUARD_TYPE" in
+        chroot)
+            run_with_chroot "$script_file" "${args[@]}"
+            ;;
+        docker)
+            run_with_docker "$script_file" "${args[@]}"
+            ;;
+    esac
+}
+
+run_with_chroot() {
+    local script_file="$1"
+    shift
+    local args=("$@")
+    
+    local chroot_root="${GUARD_CHROOT_ROOT:-/tmp/shurl-chroot-$$}"
+    
+    if [[ "$DRY_RUN" == true ]]; then
+        echo "[dry-run] Would run with chroot:" >&2
+        echo "[dry-run]   Script: $script_file" >&2
+        echo "[dry-run]   Chroot root: $chroot_root" >&2
+        echo "[dry-run]   Command: chroot $chroot_root /bin/sh $script_file ${args[*]}" >&2
+        echo "[dry-run]   Note: You must set up the chroot environment first" >&2
+        return
+    fi
+    
+    echo "Running script in chroot: $chroot_root" >&2
+    
+    if ! command -v chroot &>/dev/null; then
+        error_exit "chroot command not found\n\nPlease install util-linux or sysvinit-utils"
+    fi
+    
+    if [[ $(id -u) -ne 0 ]]; then
+        error_exit "chroot requires root privileges\n\nTry: sudo shurl --guard chroot <url>"
+    fi
+    
+    if [[ ! -d "$chroot_root" ]]; then
+        error_exit "Chroot directory does not exist: $chroot_root\n\nCreate it first with: sudo mkdir -p $chroot_root"
+    fi
+    
+    local chroot_script="$chroot_root$(realpath -s "$script_file")"
+    if [[ ! -f "$chroot_script" ]]; then
+        mkdir -p "$(dirname "$chroot_script")"
+        cp "$script_file" "$chroot_script"
+    fi
+    
+    chmod +x "$chroot_script"
+    
+    chroot "$chroot_root" /bin/sh "$chroot_script" "${args[@]}"
+}
+
+run_with_docker() {
+    local script_file="$1"
+    shift
+    local args=("$@")
+    
+    if [[ "$DRY_RUN" == true ]]; then
+        echo "[dry-run] Would run with docker:" >&2
+        echo "[dry-run]   Image: $GUARD_DOCKER_IMAGE" >&2
+        echo "[dry-run]   Script: $script_file" >&2
+        echo "[dry-run]   Command: docker run --rm -v $script_file:$script_file:ro $GUARD_DOCKER_IMAGE /bin/sh $script_file ${args[*]}" >&2
+        return
+    fi
+    
+    echo "Running script in docker: $GUARD_DOCKER_IMAGE" >&2
+    
+    if ! command -v docker &>/dev/null; then
+        error_exit "docker command not found\n\nPlease install Docker: https://docs.docker.com/get-docker/"
+    fi
+    
+    if ! docker info &>/dev/null 2>&1; then
+        error_exit "Docker daemon is not running\n\nStart Docker and try again"
+    fi
+    
+    local temp_script="/tmp/shurl-docker-$$-$(basename "$script_file")"
+    cp "$script_file" "$temp_script"
+    chmod +x "$temp_script"
+    
+    trap 'rm -f "$temp_script"' EXIT
+    
+    docker run --rm -v "$temp_script:$temp_script:ro" "$GUARD_DOCKER_IMAGE" /bin/sh "$temp_script" "${args[@]}"
 }
 
 error_exit() {
@@ -423,6 +559,7 @@ shurl v$VERSION - Download and execute shell scripts
 
 Usage: shurl [OPTIONS] <url> [args...]
        shurl [OPTIONS] gh:user/repo/file [args...]
+       shurl [OPTIONS] path/to/local/file [args...]
 
 Options:
   -h, --help          Show this help message
@@ -433,23 +570,37 @@ Options:
   -i, --install       Install script to ~/.local/bin
   -l, --list          List installed packages
   --clear-cache       Clear the shurl cache
+  --guard <type>      Run script through a guard/wrapper (chroot, docker)
+  --chroot-root <dir> Specify chroot root directory (default: /tmp/shurl-chroot-$$)
+  --docker-image <img> Specify docker image (default: alpine:latest)
 
 Short flags can be combined: -nu, -nuq, etc.
 
 Examples:
   shurl https://example.com/script.sh
   shurl gh:user/repo/script.sh
+  shurl path/to/local/script.sh
   shurl -u gh:user/repo/setup.sh                # Force fresh download
   shurl -n gh:user/repo/setup.sh                # Preview execution
   shurl -nu gh:user/repo/setup.sh               # Preview fresh download
   shurl -q gh:user/repo/tool.sh                 # Quiet mode
   shurl --install gh:user/repo/tool.sh          # Install tool
+  shurl --guard chroot path/to/script.sh        # Run in chroot
+  shurl --guard docker gh:user/repo/tool.sh     # Run in docker
   shurl --clear-cache
 
 GitHub shorthand:
   gh:user/repo/file           -> https://raw.githubusercontent.com/user/repo/main/file
   gh:user/repo@branch/file    -> https://raw.githubusercontent.com/user/repo/branch/file
   gh:user/repo@v1.2.3/file    -> https://raw.githubusercontent.com/user/repo/v1.2.3/file
+
+Local files:
+  path/to/script.sh           -> Execute local file directly
+  Note: Local files bypass cache and download steps
+
+Guard types:
+  chroot    - Run script in a chroot environment (requires root)
+  docker    - Run script in a docker container (requires docker daemon)
 
 Cache location:
   Linux:   ~/.cache/shurl
@@ -468,6 +619,7 @@ Tips:
   • Use --update when you need the latest version
   • Use --dry-run to preview before execution
   • Use --install to make a script available globally
+  • Use --guard to run scripts in isolated environments
   • shurl executes scripts (doesn't source them)
   • Variables/functions won't persist in your shell
   • Use --update for self-modifying scripts to pick up changes
