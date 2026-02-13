@@ -48,7 +48,6 @@ $ shurl -iu gh:day50-dev/shurl
 - **No copy-paste**: One command, no manual downloads
 - **Caching**: First run downloads, every run after is instant (local file)
 - **GitHub shorthand**: `gh:user/repo/file` is much nicer than the raw URL
-- **Safer than curl|bash**: Saves to disk first, you can inspect it
 - **Works like npx/uvx**: Install scripts to `~/.local/bin` and use them as commands
 - **Portable**: Works on macOS, Linux, BSD anywhere with bash
 
@@ -155,10 +154,9 @@ Override cache location with `SHURL_CACHE` environment variable.
 
 ## Safety notes
 
-- **Not as safe as reading the script first**: Always use `--dry-run` with untrusted sources
-- **Scripts run with your permissions**: They can do anything you can do
-- **No sandbox**: This is raw bash execution
-- **Still better than curl|bash**: At least you can inspect the cached file afterward
+There's a dry run here which helps. But honestly, npx and uvx has the exact same risk. If you don't have a problem npx'ing something with hundreds of cascading dependencies then...
+
+Anyways...
 
 Recommended workflow for unknown scripts:
 ```bash
