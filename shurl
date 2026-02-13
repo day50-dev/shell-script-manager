@@ -11,26 +11,14 @@
 #        shurl --guard <type>      # Run through container/guard (chroot, docker)
 set -euo pipefail
 
-# Version
 VERSION="0.6.0"
 
-# Detect OS and set cache directory
 detect_cache_dir() {
     local os_cache_dir
     
     case "$(uname -s)" in
-        Darwin*)
-            # macOS: Use ~/Library/Caches
-            os_cache_dir="$HOME/Library/Caches"
-            ;;
-        Linux*)
-            # Linux: Use ~/.cache (XDG_CACHE_HOME)
-            os_cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}"
-            ;;
-        *)
-            # Other Unix-like: fallback to ~/.cache
-            os_cache_dir="$HOME/.cache"
-            ;;
+        Darwin*) os_cache_dir="$HOME/Library/Caches" ;;
+        *) os_cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}" ;;
     esac
     
     echo "${SHURL_CACHE:-$os_cache_dir/shurl}"
@@ -58,14 +46,8 @@ main() {
     # Parse flags
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -h|--help)
-                show_help
-                return
-                ;;
-            -v|--version)
-                echo "shurl v$VERSION"
-                return
-                ;;
+            -h|--help) show_help; return ;;
+            -v|--version) echo "shurl v$VERSION"; return ;;
             --clear-cache)
                 clear_cache
                 return
@@ -424,21 +406,7 @@ error_exit() {
 }
 
 get_cache_key() {
-    local url="$1"
-    
-    # Use sha256sum or shasum depending on what's available
-    if command -v sha256sum &>/dev/null; then
-        echo "$url" | sha256sum | cut -d' ' -f1
-    elif command -v shasum &>/dev/null; then
-        echo "$url" | shasum -a 256 | cut -d' ' -f1
-    elif command -v md5sum &>/dev/null; then
-        echo "$url" | md5sum | cut -d' ' -f1
-    elif command -v md5 &>/dev/null; then
-        echo "$url" | md5 | cut -d' ' -f1
-    else
-        # Fallback: URL-safe encoding (escapes special chars)
-        echo "$url" | tr -c '[:alnum:]' '_' | head -c 200
-    fi
+    echo "$1" | md5sum | cut -d' ' -f1
 }
 
 expand_github_shorthand() {
