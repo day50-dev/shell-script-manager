@@ -260,7 +260,14 @@ install_script() {
         # Update install list
         local today
         today=$(date +%Y-%m-%d)
-        local entry="${script_name} ${today} ${url}"
+        # Determine which URL to store: prefer original gh shorthand if provided
+        local final_url
+        if [[ "$user_input" =~ ^gh: ]]; then
+            final_url="$user_input"
+        else
+            final_url="$url"
+        fi
+        local entry="${script_name} ${today} ${final_url}"
         
         # Create install list file if it doesn't exist
         touch "$INSTALL_LIST_FILE"

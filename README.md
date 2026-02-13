@@ -10,7 +10,7 @@ It caches scripts locally so you don't download them every time, supports GitHub
 ## Installation
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/day50-dev/shurl/refs/heads/main/install.sh | bash
+curl -sSL day50.dev/shurl | bash
 ```
 
 That's the last time you'll ever have to curl and bash.
