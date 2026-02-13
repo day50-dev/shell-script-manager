@@ -48,10 +48,7 @@ main() {
         case "$1" in
             -h|--help) show_help; return ;;
             -v|--version) echo "shurl v$VERSION"; return ;;
-            --clear-cache)
-                clear_cache
-                return
-                ;;
+            --clear-cache) clear_cache; return ;;
             --guard)
                 if [[ -z "${2:-}" ]] || [[ "${2:-}" =~ ^-- ]]; then
                     error_exit "--guard requires a type: chroot or docker\n\nExample: shurl --guard chroot gh:user/repo/script.sh"
@@ -60,21 +57,21 @@ main() {
                 if [[ "$GUARD_TYPE" != "chroot" ]] && [[ "$GUARD_TYPE" != "docker" ]]; then
                     error_exit "Unknown guard type: $GUARD_TYPE\n\nSupported types: chroot, docker"
                 fi
-                shift 2
+                shift
                 ;;
             --chroot-root)
                 if [[ -z "${2:-}" ]]; then
                     error_exit "--chroot-root requires a path"
                 fi
                 GUARD_CHROOT_ROOT="$2"
-                shift 2
+                shift
                 ;;
             --docker-image)
                 if [[ -z "${2:-}" ]]; then
                     error_exit "--docker-image requires an image name"
                 fi
                 GUARD_DOCKER_IMAGE="$2"
-                shift 2
+                shift 
                 ;;
             -*)
                 # Handle combined short flags (e.g., -nu, -nuq)
@@ -85,30 +82,14 @@ main() {
                     [[ "$1" =~ v ]] && echo "shurl v$VERSION" && return
                     [[ "$1" =~ i ]] && INSTALL_MODE=true
                     [[ "$1" =~ l ]] && LIST_MODE=true
-                    shift
                 else
                     # Handle long flags
                     case "$1" in
-                        --dry-run|--dryrun)
-                            DRY_RUN=true
-                            shift
-                            ;;
-                        --update)
-                            FORCE_UPDATE=true
-                            shift
-                            ;;
-                        --quiet)
-                            QUIET=true
-                            shift
-                            ;;
-                        --install)
-                            INSTALL_MODE=true
-                            shift
-                            ;;
-                        -l|--list)
-                            LIST_MODE=true
-                            shift
-                            ;;
+                        --dry-run|--dryrun) DRY_RUN=true ;;
+                        --update) FORCE_UPDATE=true ;;
+                        --quiet) QUIET=true ;;
+                        --install) INSTALL_MODE=true ;;
+                        -l|--list) LIST_MODE=true ;;
                         *)
                             error_exit "Unknown option: $1\n\nSee 'shurl --help' for usage."
                             ;;
@@ -119,6 +100,7 @@ main() {
                 break
                 ;;
         esac
+        shift
     done
     
     if [[ "$LIST_MODE" == true ]]; then
@@ -255,10 +237,8 @@ install_script() {
     local url="$2"
     local user_input="$3"
     
-    # Determine install directory
     local install_dir="${HOME}/.local/bin"
     
-    # Extract filename from URL
     local script_name
     script_name=$(basename "$url")
     
@@ -440,7 +420,6 @@ download() {
     local dest="$2"
     local temp_dest="${dest}.tmp.$$"  # Use PID for uniqueness (atomic write)
     
-    # Try curl first, then wget
     if command -v curl &>/dev/null; then
         # Use -f to fail on 404, -L to follow redirects, -S to show errors
         if ! curl -fLS "$url" -o "$temp_dest" 2>/dev/null; then
@@ -450,13 +429,8 @@ download() {
             rm -f "$temp_dest" 2>/dev/null
             error_exit "Failed to download from '$url' (HTTP $status_code)\n\nPossible reasons:\n1. URL is incorrect\n2. File doesn't exist\n3. Network issue\n4. Server requires authentication"
         fi
-    elif command -v wget &>/dev/null; then
-        if ! wget -qO "$temp_dest" "$url" 2>/dev/null; then
-            rm -f "$temp_dest" 2>/dev/null
-            error_exit "Failed to download from '$url'\n\nPossible reasons:\n1. URL is incorrect\n2. File doesn't exist\n3. Network issue\n4. Server requires authentication"
-        fi
     else
-        error_exit "curl or wget is required"
+        error_exit "curl is required"
     fi
     
     # Check if download succeeded
@@ -485,9 +459,7 @@ clear_cache() {
 lookup_installed_url() {
     local package_name="$1"
     
-    if [[ ! -f "$INSTALL_LIST_FILE" ]]; then
-        return 1
-    fi
+    [[ ! -f "$INSTALL_LIST_FILE" ]] && return 1
     
     # Look for the package name in the first column
     local url
@@ -519,6 +491,36 @@ show_cache_info() {
     else
         echo "${prefix}  Cache directory does not exist" >&2
     fi
+}
+
+list_installed() {
+    local first=
+    if [[ ! -f "$INSTALL_LIST_FILE" ]]; then
+        echo "No installed packages found (install list is empty)" >&2
+        return 0
+    fi
+    
+    local reset="\033[0m"
+    local bold="\033[1m"
+    local green="\033[32m"
+    
+    while IFS= read -r line; do
+        if [[ -z "$first" ]]; then 
+            echo ""
+            echo "  NAME                    DATE        URL"
+            echo "  ――――――――――――――――――――――――――――――――――――――――――――――――――"
+            first=1
+        fi
+        local name date url
+        name=$(echo "$line" | awk '{print $1}')
+        date=$(echo "$line" | awk '{print $2}')
+        url=$(echo "$line" | awk '{for(i=3;i<=NF;i++) printf $i (i<NF?" ":""); print ""}')
+        
+        printf "  ${bold}%-20s${reset} ${green}%-12s${reset} %s\n" "$name" "$date" "$url"
+    done < "$INSTALL_LIST_FILE"
+    [[ -z "$first" ]] && echo "No installed packages found" >&2
+    
+    echo ""
 }
 
 show_help() {
@@ -595,43 +597,5 @@ Tips:
 EOF
 }
 
-list_installed() {
-    if [[ ! -f "$INSTALL_LIST_FILE" ]]; then
-        echo "No installed packages found (install list is empty)" >&2
-        return 0
-    fi
-    
-    # Check if we have any entries
-    local entry_count
-    entry_count=$(wc -l < "$INSTALL_LIST_FILE" 2>/dev/null || echo 0)
-    
-    if [[ "$entry_count" -eq 0 ]]; then
-        echo "No installed packages found" >&2
-        return 0
-    fi
-    
-    # ANSI color codes
-    local reset="\033[0m"
-    local bold="\033[1m"
-    local green="\033[32m"
-    local yellow="\033[33m"
-    
-    echo ""
-    echo "  NAME                    DATE        URL"
-    echo "  ――――――――――――――――――――――――――――――――――――――――――――――――――"
-    
-    # Print each entry
-    while IFS= read -r line; do
-        # Parse the line: name date url
-        local name date url
-        name=$(echo "$line" | awk '{print $1}')
-        date=$(echo "$line" | awk '{print $2}')
-        url=$(echo "$line" | awk '{for(i=3;i<=NF;i++) printf $i (i<NF?" ":""); print ""}')
-        
-        printf "  ${bold}%-20s${reset} ${green}%-12s${reset} %s\n" "$name" "$date" "$url"
-    done < "$INSTALL_LIST_FILE"
-    
-    echo ""
-}
 
 main "$@"
