@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shurl v0.7.0 - download and execute shell scripts with GitHub shorthand support
+# shurl - download and execute shell scripts with GitHub shorthand support
 # Usage: shurl <url> [args...]
 #        shurl gh:user/repo/file [args...]
 #        shurl path/to/local/file [args...]
@@ -11,7 +11,7 @@
 #        shurl --guard <type>      # Run through container/guard (chroot, docker)
 set -euo pipefail
 
-VERSION="0.6.0"
+VERSION="0.7.0"
 
 detect_cache_dir() {
     local os_cache_dir
@@ -36,6 +36,10 @@ LIST_MODE=false
 GUARD_TYPE=""
 GUARD_CHROOT_ROOT=""
 GUARD_DOCKER_IMAGE="alpine:latest"
+
+reset="\033[0m"
+bold="\033[1m"
+green="\033[32m"
 
 main() {
     local is_local_file=false
@@ -508,10 +512,6 @@ list_installed() {
         return 0
     fi
     
-    local reset="\033[0m"
-    local bold="\033[1m"
-    local green="\033[32m"
-    
     while IFS= read -r line; do
         if [[ -z "$first" ]]; then 
             echo ""
@@ -519,6 +519,7 @@ list_installed() {
             echo "  ――――――――――――――――――――――――――――――――――――――――――――――――――"
             first=1
         fi
+
         local name date url
         name=$(echo "$line" | awk '{print $1}')
         date=$(echo "$line" | awk '{print $2}')
@@ -532,11 +533,15 @@ list_installed() {
 }
 
 show_help() {
+    {
     cat << EOF
 shurl v$VERSION - Download and execute shell scripts
 
+    https://github.com/day50-dev/shurl
+
 Usage: shurl [OPTIONS] <url> [args...]
        shurl [OPTIONS] gh:user/repo/file [args...]
+       shurl [OPTIONS] tool_name [args...]
        shurl [OPTIONS] path/to/local/file [args...]
 
 Options:
@@ -603,6 +608,7 @@ Tips:
   • Use --update for self-modifying scripts to pick up changes
 
 EOF
+} | sed -E 's/^([A-Za-z].*[s:])$/\x1b[1m\1\x1b[0m/g'
 }
 
 
