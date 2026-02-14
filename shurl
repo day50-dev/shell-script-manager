@@ -537,7 +537,7 @@ show_help() {
     cat << EOF
 shurl v$VERSION - Download and execute shell scripts
 
-    https://github.com/day50-dev/shurl
+       https://github.com/day50-dev/shurl
 
 Usage: shurl [OPTIONS] <url> [args...]
        shurl [OPTIONS] gh:user/repo/file [args...]
