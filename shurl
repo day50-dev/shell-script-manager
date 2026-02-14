@@ -123,18 +123,21 @@ main() {
     local shurl_url="$url"
     shift
     local args=("$@")
+    local lookup_url=
     
     # If in update mode and the URL doesn't look like a URL, try to look it up in install list
-    if [[ "$FORCE_UPDATE" == true ]] && ! [[ "$url" =~ ^https?:// ]] && ! [[ "$url" =~ ^gh: ]]; then
-        local lookup_url
+    if [[ "$FORCE_UPDATE" == true ]] ; then
         lookup_url=$(lookup_installed_url "$url")
-        if [[ -n "$lookup_url" ]]; then
-            [[ "$QUIET" != true ]] && echo "Found installed package '$url' -> $lookup_url" >&2
-            url="$lookup_url"
-            shurl_url="$lookup_url"
-        else
-            [[ "$QUIET" != true ]] && echo "Warning: '$url' not found in install list, trying as URL anyway" >&2
+        if ! [[ "$url" =~ ^https?:// ]] && ! [[ "$url" =~ ^gh: ]]; then
+            if [[ -n "$lookup_url" ]]; then
+                [[ "$QUIET" != true ]] && echo "Found installed package '$url' -> $lookup_url" >&2
+                url="$lookup_url"
+                shurl_url="$lookup_url"
+            else
+                [[ "$QUIET" != true ]] && echo "Warning: '$url' not found in install list, trying as URL anyway" >&2
+            fi
         fi
+        [[ -n "$lookup_url" ]] && INSTALL_MODE=true
     fi
     
     # Check if this is a local file (before gh: expansion)
@@ -162,20 +165,16 @@ main() {
     # If it's a local file, use it directly
     if [[ "$is_local_file" == true ]]; then
         cached_file="$(cd "$(dirname "$url")" && pwd)/$(basename "$url")"
-        if [[ "$DRY_RUN" == true ]]; then
-            echo "[dry-run] Using local file: $cached_file" >&2
-        fi
+        [[ "$DRY_RUN" == true ]] && echo "[dry-run] Using local file: $cached_file" >&2
     else
-        # Check if we should update
         if [[ "$FORCE_UPDATE" == true ]]; then
+            lookup_url=$(lookup_installed_url "$url")
             if [[ "$DRY_RUN" == true ]]; then
                 echo "[dry-run] Would force update: $url" >&2
                 echo "[dry-run] Would delete cached file: $cached_file" >&2
             else
-                [[ "$QUIET" != true ]] && echo "Forcing update for: $url" >&2
-                if [[ -f "$cached_file" ]]; then
-                    rm -f "$cached_file"
-                fi
+                [[ "$QUIET" != true ]] && echo "Updating: $url" >&2
+                [[ -f "$cached_file" ]] && rm -f "$cached_file"
             fi
         fi
         
@@ -197,7 +196,7 @@ main() {
     # Handle install mode
     if [[ "$INSTALL_MODE" == true ]]; then
         install_script "$cached_file" "$shurl_url" "$user_input"
-        return
+        [[ "$FORCE_UPDATE" == true ]] || return
     fi
     
     if [[ -n "$GUARD_TYPE" ]]; then
@@ -515,8 +514,8 @@ list_installed() {
     while IFS= read -r line; do
         if [[ -z "$first" ]]; then 
             echo ""
-            echo "  NAME                    DATE        URL"
-            echo "  ――――――――――――――――――――――――――――――――――――――――――――――――――"
+            echo -e "  ${bold}NAME                 DATE         URL${reset}"
+            echo "  ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――"
             first=1
         fi
 
