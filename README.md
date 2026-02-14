@@ -44,11 +44,11 @@ If the script has the common format: ` user/<x>/<x> ` it can be shortened, just 
 For instance, updating shurl is:
 
 ```
-$ shurl -u gh:day50-dev/shurl
+$ shurl -iu gh:day50-dev/shurl
 ```
 or simply
 ```
-$ shurl -u shurl
+$ shurl -iu shurl
 ```
 
 ## Why use this?
