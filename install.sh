@@ -216,7 +216,7 @@ show_usage() {
     echo ""
     echo "Regular usage:"
     echo "  shurl gh:day50-dev/shurl/examples/hello.sh"
-    echo "  shurl https://raw.githubusercontent.com/day50-dev/shurl/main/README.md"
+    echo "  curl -s https://raw.githubusercontent.com/day50-dev/shurl/main/README.md | sd"
     echo ""
     echo "Documentation: $REPO_URL"
 }
