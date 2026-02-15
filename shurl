@@ -146,7 +146,7 @@ main() {
     # Expand GitHub shorthand if needed (only if not a local file)
     if [[ "$is_local_file" != true ]]; then 
         if ! [[ "$url" =~ ^gh: ]]; then
-            lookup_url=$(lookup_installed_url "$url")
+            lookup_url=$(lookup_installed_url "$url") || true
             [[ -n "$lookup_url" ]] && url="$lookup_url"
         fi
         # do not else here, the code above is a potential resolver
