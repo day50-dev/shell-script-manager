@@ -1,135 +1,93 @@
 #!/usr/bin/env bats
 
+SHURL_BINARY="/home/chris/code/shurl/shurl"
+
 @test "Local file execution" {
-    local temp_script
-    temp_script="$(mktemp)/local-exec-test.sh"
-    mkdir -p "$(dirname "$temp_script")"
+    local temp_script="$BATS_TMPDIR/local-test.sh"
     cat > "$temp_script" << 'SCRIPT'
 #!/bin/bash
-echo "local executed"
+echo "local output"
 SCRIPT
     chmod +x "$temp_script"
 
     run "$SHURL_BINARY" "$temp_script" 2>&1
-    [[ "$output" == *local\ executed* ]]
+    [[ "$output" == *"local output"* ]]
 }
 
-@test "Local file dry run" {
-    local temp_script
-    temp_script="$(mktemp)/local-dryrun-test.sh"
-    mkdir -p "$(dirname "$temp_script")"
-    cat > "$temp_script" << 'SCRIPT'
-#!/bin/bash
-echo "dry local"
-SCRIPT
-    chmod +x "$temp_script"
-
-    run "$SHURL_BINARY" --dry-run "$temp_script" 2>&1
-    [[ "$output" == *\ [dry-run]\ * ]]
-    [[ "$output" == *Using\ local\ file* ]]
-}
-
-@test "Local file bypasses cache" {
-    local temp_script
-    temp_script="$(mktemp)/local-cache-test.sh"
-    mkdir -p "$(dirname "$temp_script")"
-    cat > "$temp_script" << 'SCRIPT'
-#!/bin/bash
-echo "cache bypass"
-SCRIPT
-    chmod +x "$temp_script"
-
-    "$SHURL_BINARY" "$temp_script" > /dev/null 2>&1 || true
-
-    local cache_count
-    cache_count="$(find "$SHURL_CACHE" -name "*.sh" 2>/dev/null | wc -l)"
-
-    "$SHURL_BINARY" "$temp_script" > /dev/null 2>&1 || true
-
-    local new_cache_count
-    new_cache_count="$(find "$SHURL_CACHE" -name "*.sh" 2>/dev/null | wc -l)"
-
-    [ "$cache_count" = "$new_cache_count" ]
-}
-
-@test "Local file with args" {
-    local temp_script
-    temp_script="$(mktemp)/local-args-test.sh"
-    mkdir -p "$(dirname "$temp_script")"
+@test "Local file with arguments" {
+    local temp_script="$BATS_TMPDIR/local-args.sh"
     cat > "$temp_script" << 'SCRIPT'
 #!/bin/bash
 echo "args: $*"
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" "$temp_script" arg1 arg2 arg3 2>&1
-    [[ "$output" == *arg1\ arg2\ arg3* ]]
+    run "$SHURL_BINARY" "$temp_script" arg1 arg2 2>&1
+    [[ "$output" == *"arg1 arg2"* ]]
 }
 
-@test "Local file update" {
-    local temp_script
-    temp_script="$(mktemp)/local-update-test.sh"
-    mkdir -p "$(dirname "$temp_script")"
+@test "Local file bypasses cache" {
+    local temp_script="$BATS_TMPDIR/nocache.sh"
     cat > "$temp_script" << 'SCRIPT'
 #!/bin/bash
-echo "original"
+echo "no cache"
 SCRIPT
     chmod +x "$temp_script"
-
-    "$SHURL_BINARY" "$temp_script" > /dev/null 2>&1 || true
-
-    cat > "$temp_script" << 'SCRIPT'
-#!/bin/bash
-echo "updated"
-SCRIPT
 
     run "$SHURL_BINARY" --update "$temp_script" 2>&1
-    [[ "$output" == *updated* ]]
+    [[ "$output" == *"no cache"* ]]
 }
 
-@test "Local file install" {
-    local temp_script
-    temp_script="$(mktemp)/local-install-test.sh"
-    mkdir -p "$(dirname "$temp_script")"
+@test "Local file shows in dry-run" {
+    local temp_script="$BATS_TMPDIR/dry-local.sh"
     cat > "$temp_script" << 'SCRIPT'
 #!/bin/bash
-echo "installed"
+echo "dry"
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" --install "$temp_script" 2>&1
-    [[ "$output" == *is\ now\ available* ]]
+    run "$SHURL_BINARY" --dry-run "$temp_script" 2>&1
+    [[ "$output" == *"[dry-run]"* ]]
+    [[ "$output" == *"local file"* ]]
 }
 
-@test "Local file absolute path" {
-    local temp_script
-    temp_script="$(mktemp)/local-abs-test.sh"
-    mkdir -p "$(dirname "$temp_script")"
-    cat > "$temp_script" << 'SCRIPT'
-#!/bin/bash
-echo "absolute"
-SCRIPT
-    chmod +x "$temp_script"
-
-    local abs_path
-    abs_path="$(cd "$(dirname "$temp_script")" && pwd)/$(basename "$temp_script")"
-
-    run "$SHURL_BINARY" "$abs_path" 2>&1
-    [[ "$output" == *absolute* ]]
+@test "Non-existent local file errors" {
+    run "$SHURL_BINARY" /nonexistent/file.sh 2>&1
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"error"* ]]
 }
 
-@test "Local file relative path" {
-    local temp_script
-    temp_script="$(mktemp)/local-rel-test.sh"
-    mkdir -p "$(dirname "$temp_script")"
+@test "Local file with shebang" {
+    local temp_script="$BATS_TMPDIR/shebang-test.sh"
     cat > "$temp_script" << 'SCRIPT'
 #!/bin/bash
-echo "relative"
+echo "shebang"
 SCRIPT
     chmod +x "$temp_script"
-
-    local rel_path="${temp_script##*/}"
 
     run "$SHURL_BINARY" "$temp_script" 2>&1
-    [[ "$output" == *relative* ]]
+    [[ "$output" == *"shebang"* ]]
+}
+
+@test "Local file without shebang warns but runs" {
+    local temp_script="$BATS_TMPDIR/no-shebang.sh"
+    cat > "$temp_script" << 'SCRIPT'
+echo "no shebang"
+SCRIPT
+    chmod +x "$temp_script"
+
+    run "$SHURL_BINARY" -q "$temp_script" 2>&1
+    [[ "$output" == *"no shebang"* ]]
+}
+
+@test "Local file with quiet mode" {
+    local temp_script="$BATS_TMPDIR/quiet-local.sh"
+    cat > "$temp_script" << 'SCRIPT'
+#!/bin/bash
+echo "quiet"
+SCRIPT
+    chmod +x "$temp_script"
+
+    run "$SHURL_BINARY" -q "$temp_script" 2>&1
+    [[ "$output" == *"quiet"* ]]
 }

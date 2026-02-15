@@ -194,7 +194,7 @@ main() {
     # Handle install mode
     if [[ "$INSTALL_MODE" == true ]]; then
         install_script "$cached_file" "$shurl_url" "$user_input"
-        [[ "$FORCE_UPDATE" == true ]] || return
+        [[ "$FORCE_UPDATE" == true ]] || return 0
     fi
     
     if [[ -n "$GUARD_TYPE" ]]; then
