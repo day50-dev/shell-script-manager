@@ -1,0 +1,346 @@
+#!/usr/bin/env bash
+# ursh audit plugin - Analyzes shell scripts and generates permission manifests
+set -euo pipefail
+
+SCRIPT_PATH="${1:-}"
+ACTION="${2:-}"
+MANIFEST_PATH="${3:-}"
+
+if [[ -z "$SCRIPT_PATH" ]]; then
+    echo "Usage: ursh audit <script-path-or-url>" >&2
+    exit 1
+fi
+
+reset="\033[0m"
+bold="\033[1m"
+green="\033[32m"
+yellow="\033[33m"
+red="\033[31m"
+
+get_script_content() {
+    local path="$1"
+    
+    if [[ "$path" =~ ^https?:// ]]; then
+        curl -sSL "$path" 2>/dev/null || {
+            echo "Failed to download script from: $path" >&2
+            exit 1
+        }
+    elif [[ -f "$path" ]]; then
+        cat "$path"
+    else
+        echo "Script not found: $path" >&2
+        exit 1
+    fi
+}
+
+calculate_sha256_file() {
+    local file="$1"
+    sha256sum "$file" | cut -d' ' -f1
+}
+
+find_manifest() {
+    local script_url="$1"
+    local script_path="$2"
+    
+    local script_dir=""
+    if [[ -f "$script_path" ]]; then
+        script_dir="$(dirname "$script_path")"
+    fi
+    
+    local possible_manifests=()
+    
+    if [[ -n "$script_dir" ]]; then
+        possible_manifests+=("$script_dir/ursh-permissions.yml")
+        possible_manifests+=("$script_dir/.ursh/ursh-permissions.yml")
+    fi
+    
+    if [[ "$script_url" =~ ^https?:// ]]; then
+        local repo_base="${script_url%/*}"
+        possible_manifests+=("${repo_base}/ursh-permissions.yml")
+        possible_manifests+=("${repo_base}/.ursh/ursh-permissions.yml")
+    fi
+    
+    for manifest in "${possible_manifests[@]}"; do
+        if [[ -f "$manifest" ]]; then
+            echo "$manifest"
+            return 0
+        fi
+    done
+    
+    return 1
+}
+
+verify_checksum() {
+    local script_path="$1"
+    local expected_checksum="$2"
+    
+    local actual_checksum
+    actual_checksum=$(sha256sum "$script_path" | cut -d' ' -f1)
+    
+    [[ "$actual_checksum" == "$expected_checksum" ]]
+}
+
+display_manifest_summary() {
+    local manifest_path="$1"
+    local script_path="$2"
+    
+    local script_name
+    script_name=$(basename "$script_path")
+    
+    local timestamp
+    timestamp=$(grep -m1 "timestamp:" "$manifest_path" | sed 's/.*timestamp: *//' | tr -d '"')
+    
+    local checksum_expected
+    checksum_expected=$(grep -A2 "checksum:" "$manifest_path" | grep "value:" | sed 's/.*value: *//' | tr -d '"')
+    
+    local checksum_status="${green}matches${reset}"
+    local checksum_icon="✓"
+    if [[ -n "$checksum_expected" ]] && [[ -f "$script_path" ]]; then
+        if ! verify_checksum "$script_path" "$checksum_expected"; then
+            checksum_status="${red}MISMATCH - script has changed!${reset}"
+            checksum_icon="✗"
+        fi
+    else
+        checksum_status="${yellow}not verified${reset}"
+        checksum_icon="?"
+    fi
+    
+    echo -e "${bold}ursh Manifest Summary${reset}"
+    echo ""
+    echo -e "  ${bold}Script:${reset} $script_name"
+    echo -e "  ${bold}Audit date:${reset} $timestamp"
+    echo -e "  ${bold}Checksum:${reset} $checksum_status $checksum_icon"
+    echo ""
+    echo -e "${bold}Permissions:${reset}"
+    
+    if grep -q "sudo: true" "$manifest_path"; then
+        echo -e "  ${bold}•${reset} sudo: YES"
+    fi
+    
+    if grep -q "outbound: true" "$manifest_path"; then
+        local hosts
+        hosts=$(grep -A5 "allowed_hosts:" "$manifest_path" | grep "  - " | head -5 | sed 's/.*  - //' | tr '\n' ',' | sed 's/,$//')
+        echo -e "  ${bold}•${reset} Network: outbound to $hosts"
+    fi
+    
+    local write_paths
+    write_paths=$(grep -A5 "write:" "$manifest_path" | grep "  - " | head -5 | sed 's/.*  - //' | tr '\n' ',' | sed 's/,$//')
+    if [[ -n "$write_paths" ]]; then
+        echo -e "  ${bold}•${reset} Filesystem write: $write_paths"
+    fi
+    
+    local required_env
+    required_env=$(grep -A5 "required:" "$manifest_path" | grep "  - " | sed 's/.*  - //' | tr '\n' ',' | sed 's/,$//')
+    if [[ -n "$required_env" ]]; then
+        echo -e "  ${bold}•${reset} Required env: $required_env"
+    fi
+    
+    echo ""
+}
+
+analyze_script() {
+    local content="$1"
+    local script_path="$2"
+    
+    local has_sudo=false
+    local has_filesystem_write=false
+    local has_network=false
+    local required_env=()
+    local read_paths=()
+    local write_paths=()
+    local execute_paths=()
+    
+    if [[ "$script_path" =~ ^https?:// ]]; then
+        read_paths+=("$script_path")
+    fi
+    
+    if echo "$content" | grep -qE '^\s*(sudo|doas)'; then
+        has_sudo=true
+    fi
+    
+    if echo "$content" | grep -qE '\bwget\b|\bcurl\b'; then
+        has_network=true
+    fi
+    
+    if echo "$content" | grep -qE '\b(apt|yum|dnf|pacman|brew)\b'; then
+        has_filesystem_write=true
+        write_paths+=("/var/lib/apt/lists" "/var/cache/apt" "/var/log/apt")
+    fi
+    
+    if echo "$content" | grep -qE '\b(rm|mv|cp|ln|mkdir|rmdir)\b'; then
+        has_filesystem_write=true
+    fi
+    
+    if echo "$content" | grep -qE '\b(chmod|chown|chgrp)\b'; then
+        has_filesystem_write=true
+    fi
+    
+    if echo "$content" | grep -qE '\b(echo|printf)\s*>>'; then
+        has_filesystem_write=true
+        if echo "$content" | grep -qE '\b(echo|printf)\s*>>\s*/tmp/'; then
+            write_paths+=("/tmp/*")
+        fi
+    fi
+    
+    if echo "$content" | grep -qE '\b(forward-port|port-forward|ssh)\b'; then
+        execute_paths+=("/usr/bin/ssh")
+    fi
+    
+    if echo "$content" | grep -qE '\b(wget|curl)\b'; then
+        execute_paths+=("/usr/bin/wget" "/usr/bin/curl")
+    fi
+    
+    if echo "$content" | grep -qE '\b(aws|gcloud|kubectl)\b'; then
+        execute_paths+=("/usr/bin/aws" "/usr/bin/gcloud" "/usr/bin/kubectl")
+    fi
+    
+    if echo "$content" | grep -qE '\b(cat|head|tail|grep|sed|awk)\b'; then
+        execute_paths+=("/bin/cat" "/usr/bin/head" "/usr/bin/tail" "/bin/grep" "/usr/bin/sed" "/usr/bin/awk")
+    fi
+    
+    local timestamp
+    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    
+    local script_name
+    script_name=$(basename "$script_path" .sh)
+    
+    local checksum
+    checksum=$(calculate_sha256_file "$script_path")
+    
+    local confidence="medium"
+    local notes="Static analysis performed by ursh-audit plugin"
+    
+    if [[ "$has_sudo" == true ]]; then
+        confidence="high"
+        notes="$notes; detected sudo usage"
+    fi
+    
+    if [[ "$has_network" == true ]]; then
+        confidence="high"
+        notes="$notes; detected network calls"
+    fi
+    
+    if [[ "$has_filesystem_write" == true ]]; then
+        confidence="high"
+        notes="$notes; detected filesystem modifications"
+    fi
+    
+    local read_yaml=""
+    if [[ ${#read_paths[@]} -gt 0 ]]; then
+        for path in "${read_paths[@]}"; do
+            read_yaml="$read_yaml      - \"$path\"\n"
+        done
+    else
+        read_yaml="      - \"/tmp/*\"\n"
+    fi
+    
+    local write_yaml=""
+    if [[ ${#write_paths[@]} -gt 0 ]]; then
+        for path in "${write_paths[@]}"; do
+            write_yaml="$write_yaml      - \"$path\"\n"
+        done
+    else
+        write_yaml="      - \"/tmp/*\"\n"
+    fi
+    
+    local execute_yaml=""
+    if [[ ${#execute_paths[@]} -gt 0 ]]; then
+        for path in "${execute_paths[@]}"; do
+            execute_yaml="$execute_yaml      - \"$path\"\n"
+        done
+    else
+        execute_yaml="      - \"/bin/sh\"\n      - \"/usr/bin/env\"\n"
+    fi
+    
+    local required_env_yaml=""
+    if [[ ${#required_env[@]} -gt 0 ]]; then
+        for var in "${required_env[@]}"; do
+            required_env_yaml="$required_env_yaml      - \"$var\"\n"
+        done
+    else
+        required_env_yaml="      - \"PATH\"\n"
+    fi
+    
+    cat << EOF
+version: 1
+name: $script_name
+description: Generated by ursh audit plugin
+script_path: $(basename "$script_path")
+script_url: $script_path
+
+checksum:
+  algorithm: sha256
+  value: $checksum
+
+permissions:
+  sudo: $has_sudo
+  filesystem:
+    read:
+$(echo -e "$read_yaml" | sed 's/^/      /')
+    write:
+$(echo -e "$write_yaml" | sed 's/^/      /')
+    execute:
+$(echo -e "$execute_yaml" | sed 's/^/      /')
+  network:
+    outbound: $has_network
+    allowed_hosts: []
+  environment:
+    required:
+$(echo -e "$required_env_yaml" | sed 's/^/      /')
+    optional: []
+
+audit:
+  performed_by: ursh-audit/1.0.0
+  timestamp: "$timestamp"
+  confidence: $confidence
+  notes: "$notes"
+EOF
+}
+
+run_audit() {
+    local script_content
+    script_content=$(get_script_content "$SCRIPT_PATH")
+    
+    analyze_script "$script_content" "$SCRIPT_PATH"
+}
+
+run_verify() {
+    local manifest_path="$MANIFEST_PATH"
+    local accept_all="${SCRIPT_ACCEPTED:-false}"
+    
+    if [[ ! -f "$manifest_path" ]]; then
+        echo -e "${yellow}Warning: Manifest file not found: $manifest_path${reset}" >&2
+        return 1
+    fi
+    
+    display_manifest_summary "$manifest_path" "$SCRIPT_PATH"
+    
+    if [[ "$accept_all" == "true" ]]; then
+        echo "Running (automatically accepted via --yes flag)"
+        return 0
+    fi
+    
+    read -r -p "Run this script? [y/N] " response
+    case "$response" in
+        [yY][eE][sS]|[yY])
+            return 0
+            ;;
+        *)
+            echo "Aborted"
+            exit 1
+            ;;
+    esac
+}
+
+main() {
+    case "$ACTION" in
+        verify)
+            run_verify
+            ;;
+        *)
+            run_audit
+            ;;
+    esac
+}
+
+main

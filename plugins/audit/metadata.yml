@@ -1,0 +1,5 @@
+name: audit
+version: 1.0.0
+description: Permission-aware safe execution with static analysis
+language: bash
+entrypoint: main
