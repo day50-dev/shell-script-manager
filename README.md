@@ -1,5 +1,5 @@
 <p align="center">
-  <img width="421" height="239" alt="shurl-logo" src="https://github.com/user-attachments/assets/22ac3f71-2b08-49af-9f0a-4eb8ff204aaa" />
+<img width="469" height="194" alt="logo_sm" src="https://github.com/user-attachments/assets/fb5f3cb9-b360-4d13-8e2f-11cf01cb27af" />
 <br/><strong>Like npx or uvx, but for shell scripts</strong>
 </p>
 
