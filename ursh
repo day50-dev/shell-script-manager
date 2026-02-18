@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# shurl - download and execute shell scripts with GitHub shorthand support
-# Usage: shurl <url> [args...]
-#        shurl gh:user/repo/file [args...]
-#        shurl path/to/local/file [args...]
-#        shurl --dry-run <url>     # Show what would be executed
-#        shurl --update <url>      # Force fresh download
-#        shurl --install <url>     # Install script to ~/.local/bin
-#        shurl --clear-cache
-#        shurl --version
-#        shurl --guard <type>      # Run through container/guard (chroot, docker)
+# ursh - download and execute shell scripts with GitHub shorthand support
+# Usage: ursh <url> [args...]
+#        ursh gh:user/repo/file [args...]
+#        ursh path/to/local/file [args...]
+#        ursh --dry-run <url>     # Show what would be executed
+#        ursh --update <url>      # Force fresh download
+#        ursh --install <url>     # Install script to ~/.local/bin
+#        ursh --clear-cache
+#        ursh --version
+#        ursh --guard <type>      # Run through container/guard (chroot, docker)
 set -euo pipefail
 
 VERSION="0.7.2"
@@ -21,12 +21,12 @@ detect_cache_dir() {
         *) os_cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}" ;;
     esac
     
-    echo "${SHURL_CACHE:-$os_cache_dir/shurl}"
+    echo "${URSH_CACHE:-$os_cache_dir/ursh}"
 }
 
-SHURL_CACHE="$(detect_cache_dir)"
-mkdir -p "$SHURL_CACHE"
-INSTALL_LIST_FILE="$SHURL_CACHE/install-list.txt"
+URSH_CACHE="$(detect_cache_dir)"
+mkdir -p "$URSH_CACHE"
+INSTALL_LIST_FILE="$URSH_CACHE/install-list.txt"
 
 DRY_RUN=false
 FORCE_UPDATE=false
@@ -52,12 +52,12 @@ main() {
     # Parse flags
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -h|--help) show_help; return ;;
-            -v|--version) echo "shurl v$VERSION"; return ;;
+-h|--help) show_help; return ;;
+    -v|--version) echo "ursh v$VERSION"; return ;;
             --clear-cache) clear_cache; return ;;
             --guard)
                 if [[ -z "${2:-}" ]] || [[ "${2:-}" =~ ^-- ]]; then
-                    error_exit "--guard requires a type: chroot or docker\n\nExample: shurl --guard chroot gh:user/repo/script.sh"
+                    error_exit "--guard requires a type: chroot or docker\n\nExample: ursh --guard chroot gh:user/repo/script.sh"
                 fi
                 GUARD_TYPE="$2"
                 if [[ "$GUARD_TYPE" != "chroot" ]] && [[ "$GUARD_TYPE" != "docker" ]]; then
@@ -85,7 +85,7 @@ main() {
                     [[ "$1" =~ n ]] && DRY_RUN=true
                     [[ "$1" =~ u ]] && FORCE_UPDATE=true
                     [[ "$1" =~ q ]] && QUIET=true
-                    [[ "$1" =~ v ]] && echo "shurl v$VERSION" && return
+                    [[ "$1" =~ v ]] && echo "ursh v$VERSION" && return
                     [[ "$1" =~ i ]] && INSTALL_MODE=true
                     [[ "$1" =~ l ]] && LIST_MODE=true
                 else
@@ -97,7 +97,7 @@ main() {
                         --install) INSTALL_MODE=true ;;
                         -l|--list) LIST_MODE=true ;;
                         *)
-                            error_exit "Unknown option: $1\n\nSee 'shurl --help' for usage."
+                            error_exit "Unknown option: $1\n\nSee 'ursh --help' for usage."
                             ;;
                     esac
                 fi
@@ -113,12 +113,12 @@ main() {
     fi
     
     if [[ $# -eq 0 ]]; then
-        error_exit "No URL provided.\n\nUsage: shurl [OPTIONS] <url> [args...]\nSee 'shurl --help' for more information."
+        error_exit "No URL provided.\n\nUsage: ursh [OPTIONS] <url> [args...]\nSee 'ursh --help' for more information."
     fi
     
     local user_input="$1"
     local url="$1"
-    local shurl_url="$url"
+    local ursh_url="$url"
     shift
     local args=("$@")
     local lookup_url=
@@ -130,7 +130,7 @@ main() {
             if [[ -n "$lookup_url" ]]; then
                 [[ "$QUIET" != true ]] && echo "Found installed package '$url' -> $lookup_url" >&2
                 url="$lookup_url"
-                shurl_url="$lookup_url"
+                ursh_url="$lookup_url"
             else
                 [[ "$QUIET" != true ]] && echo "Warning: '$url' not found in install list, trying as URL anyway" >&2
             fi
@@ -158,7 +158,7 @@ main() {
     # Create cache key from URL
     local cache_key
     cache_key=$(get_cache_key "$url")
-    local cached_file="$SHURL_CACHE/$cache_key.sh"
+    local cached_file="$URSH_CACHE/$cache_key.sh"
     
     # If it's a local file, use it directly
     if [[ "$is_local_file" == true ]]; then
@@ -193,7 +193,7 @@ main() {
     
     # Handle install mode
     if [[ "$INSTALL_MODE" == true ]]; then
-        install_script "$cached_file" "$shurl_url" "$user_input"
+        install_script "$cached_file" "$ursh_url" "$user_input"
         [[ "$FORCE_UPDATE" == true ]] || return
     fi
     
@@ -231,7 +231,7 @@ main() {
     
     # Verify the script is valid before executing
     if [[ ! -s "$cached_file" ]]; then
-        error_exit "Cached file is empty. Try: shurl --update '$url'"
+        error_exit "Cached file is empty. Try: ursh --update '$url'"
     fi
     
     # Check for shebang (warn if missing, but allow execution)
@@ -323,7 +323,7 @@ run_with_chroot() {
     shift
     local args=("$@")
     
-    local chroot_root="${GUARD_CHROOT_ROOT:-/tmp/shurl-chroot-$$}"
+    local chroot_root="${GUARD_CHROOT_ROOT:-/tmp/ursh-chroot-$$}"
     
     if [[ "$DRY_RUN" == true ]]; then
         echo "[dry-run] Would run with chroot:" >&2
@@ -341,7 +341,7 @@ run_with_chroot() {
     fi
     
     if [[ $(id -u) -ne 0 ]]; then
-        error_exit "chroot requires root privileges\n\nTry: sudo shurl --guard chroot <url>"
+        error_exit "chroot requires root privileges\n\nTry: sudo ursh --guard chroot <url>"
     fi
     
     if [[ ! -d "$chroot_root" ]]; then
@@ -382,7 +382,7 @@ run_with_docker() {
         error_exit "Docker daemon is not running\n\nStart Docker and try again"
     fi
     
-    local temp_script="/tmp/shurl-docker-$$-$(basename "$script_file")"
+    local temp_script="/tmp/ursh-docker-$$-$(basename "$script_file")"
     cp "$script_file" "$temp_script"
     chmod +x "$temp_script"
     
@@ -392,7 +392,7 @@ run_with_docker() {
 }
 
 error_exit() {
-    printf "shurl: error: %b\n" "$1" >&2
+    printf "ursh: error: %b\n" "$1" >&2
     exit 1
 }
 
@@ -422,7 +422,7 @@ expand_github_shorthand() {
         
         echo "https://raw.githubusercontent.com/${user}/${repo}/${branch}/${repo}"
     else
-        error_exit "Invalid GitHub shorthand: '$shorthand'\n\nFormat should be: gh:user/repo/file\nOr with branch: gh:user/repo@branch/file\nOr just repo: gh:user/repo (expands to gh:user/repo/repo)\n\nExamples:\n  gh:day50-dev/shurl/shurl\n  gh:day50-dev/shurl@main/shurl\n  gh:day50-dev/shurl  (expands to gh:day50-dev/shurl/shurl)"
+        error_exit "Invalid GitHub shorthand: '$shorthand'\n\nFormat should be: gh:user/repo/file\nOr with branch: gh:user/repo@branch/file\nOr just repo: gh:user/repo (expands to gh:user/repo/repo)\n\nExamples:\n  gh:day50-dev/ursh/ursh\n  gh:day50-dev/ursh@main/ursh\n  gh:day50-dev/ursh  (expands to gh:day50-dev/ursh/ursh)"
     fi
 }
 
@@ -455,12 +455,12 @@ download() {
 }
 
 clear_cache() {
-    echo "Clearing shurl cache at: $SHURL_CACHE" >&2
-    if [[ -d "$SHURL_CACHE" ]]; then
+    echo "Clearing ursh cache at: $URSH_CACHE" >&2
+    if [[ -d "$URSH_CACHE" ]]; then
         local file_count
-        file_count=$(ls -1 "$SHURL_CACHE/" 2>/dev/null | wc -l || echo 0)
+        file_count=$(ls -1 "$URSH_CACHE/" 2>/dev/null | wc -l || echo 0)
         echo "Removing $file_count cached file(s)" >&2
-        rm -rf "$SHURL_CACHE"
+        rm -rf "$URSH_CACHE"
         echo "Cache cleared" >&2
     else
         echo "Cache directory does not exist" >&2
@@ -491,11 +491,11 @@ show_cache_info() {
     fi
     
     echo "${prefix}Cache info:" >&2
-    echo "${prefix}  Cache directory: $SHURL_CACHE" >&2
+    echo "${prefix}  Cache directory: $URSH_CACHE" >&2
     
-    if [[ -d "$SHURL_CACHE" ]]; then
+    if [[ -d "$URSH_CACHE" ]]; then
         local file_count
-        file_count=$(ls -1 "$SHURL_CACHE/"*.sh 2>/dev/null | wc -l || echo 0)
+        file_count=$(ls -1 "$URSH_CACHE/"*.sh 2>/dev/null | wc -l || echo 0)
         echo "${prefix}  Cached files: $file_count" >&2
     else
         echo "${prefix}  Cache directory does not exist" >&2
@@ -532,14 +532,14 @@ list_installed() {
 show_help() {
     {
     cat << EOF
-shurl v$VERSION 🐚 Download and execute shell scripts
+ursh v$VERSION 🐚 Download and execute shell scripts
 
-       https://github.com/day50-dev/shurl
+       https://github.com/day50-dev/ursh
 
-Usage: shurl [OPTIONS] <url> [args...]
-       shurl [OPTIONS] gh:user/repo/file [args...]
-       shurl [OPTIONS] tool_name [args...]
-       shurl [OPTIONS] path/to/local/file [args...]
+Usage: ursh [OPTIONS] <url> [args...]
+       ursh [OPTIONS] gh:user/repo/file [args...]
+       ursh [OPTIONS] tool_name [args...]
+       ursh [OPTIONS] path/to/local/file [args...]
 
 Options:
   -h, --help          Show this help message
@@ -549,25 +549,25 @@ Options:
   -q, --quiet         Suppress non-error output
   -i, --install       Install script to ~/.local/bin
   -l, --list          List installed packages
-  --clear-cache       Clear the shurl cache
+  --clear-cache       Clear the ursh cache
   --guard <type>      Run script through a guard/wrapper (chroot, docker)
-  --chroot-root <dir> Specify chroot root directory (default: /tmp/shurl-chroot-$$)
+  --chroot-root <dir> Specify chroot root directory (default: /tmp/ursh-chroot-$$)
   --docker-image <img> Specify docker image (default: alpine:latest)
 
 Short flags can be combined: -nu, -nuq, etc.
 
 Examples:
-  shurl https://example.com/script.sh
-  shurl gh:user/repo/script.sh
-  shurl path/to/local/script.sh
-  shurl -u gh:user/repo/setup.sh                # Force fresh download
-  shurl -n gh:user/repo/setup.sh                # Preview execution
-  shurl -nu gh:user/repo/setup.sh               # Preview fresh download
-  shurl -q gh:user/repo/tool.sh                 # Quiet mode
-  shurl --install gh:user/repo/tool.sh          # Install tool
-  shurl --guard chroot path/to/script.sh        # Run in chroot
-  shurl --guard docker gh:user/repo/tool.sh     # Run in docker
-  shurl --clear-cache
+  ursh https://example.com/script.sh
+  ursh gh:user/repo/script.sh
+  ursh path/to/local/script.sh
+  ursh -u gh:user/repo/setup.sh                # Force fresh download
+  ursh -n gh:user/repo/setup.sh                # Preview execution
+  ursh -nu gh:user/repo/setup.sh               # Preview fresh download
+  ursh -q gh:user/repo/tool.sh                 # Quiet mode
+  ursh --install gh:user/repo/tool.sh          # Install tool
+  ursh --guard chroot path/to/script.sh        # Run in chroot
+  ursh --guard docker gh:user/repo/tool.sh     # Run in docker
+  ursh --clear-cache
 
 GitHub shorthand:
   gh:user/repo/file           -> https://raw.githubusercontent.com/user/repo/main/file
@@ -583,15 +583,15 @@ Guard types:
   docker    - Run script in a docker container (requires docker daemon)
 
 Cache location:
-  Linux:   ~/.cache/shurl
-  macOS:   ~/Library/Caches/shurl
-  Custom:  Set SHURL_CACHE environment variable
+  Linux:   ~/.cache/ursh
+  macOS:   ~/Library/Caches/ursh
+  Custom:  Set URSH_CACHE environment variable
 
 Install location:
   ~/.local/bin (ensure this is in your PATH)
 
 Output:
-  By default, shurl shows status messages. Use -q for clean output.
+  By default, ursh shows status messages. Use -q for clean output.
   Errors always go to stderr. Script output goes to stdout.
 
 Tips:
@@ -600,7 +600,7 @@ Tips:
   • Use --dry-run to preview before execution
   • Use --install to make a script available globally
   • Use --guard to run scripts in isolated environments
-  • shurl executes scripts (doesn't source them)
+  • ursh executes scripts (doesn't source them)
   • Variables/functions won't persist in your shell
   • Use --update for self-modifying scripts to pick up changes
 

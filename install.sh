@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# shurl installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/day50-dev/shurl/main/install.sh | bash
+# ursh installer
+# Usage: curl -fsSL https://raw.githubusercontent.com/day50-dev/ursh/main/install.sh | bash
 
 set -euo pipefail
 
@@ -49,9 +49,9 @@ detect_install_dir() {
 }
 
 # Defaults
-BINARY_NAME="shurl"
-REPO_URL="https://github.com/day50-dev/shurl"
-RAW_URL="https://raw.githubusercontent.com/day50-dev/shurl/main/shurl"
+BINARY_NAME="ursh"
+REPO_URL="https://github.com/day50-dev/ursh"
+RAW_URL="https://raw.githubusercontent.com/day50-dev/ursh/main/ursh"
 INSTALL_DIR="${INSTALL_DIR:-$(detect_install_dir)}"
 TEMP_FILE=""
 
@@ -77,7 +77,7 @@ warn() { echo -e "${YELLOW}$1${NC}"; }
 # Check requirements
 check_requirements() {
     if ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
-        error_exit "curl or wget is required to install shurl"
+        error_exit "curl or wget is required to install ursh"
     fi
     
     info "Detected OS: $(uname -s)"
@@ -96,16 +96,16 @@ check_requirements() {
     fi
 }
 
-# Download shurl
-download_shurl() {
-    info "Downloading shurl from GitHub..."
+# Download ursh
+download_ursh() {
+    info "Downloading ursh from GitHub..."
     
-    TEMP_FILE=$(mktemp /tmp/shurl-install-XXXXXX)
+    TEMP_FILE=$(mktemp /tmp/ursh-install-XXXXXX)
     
     if command -v curl &>/dev/null; then
-        curl -fsSL "$RAW_URL" -o "$TEMP_FILE" || error_exit "Failed to download shurl"
+        curl -fsSL "$RAW_URL" -o "$TEMP_FILE" || error_exit "Failed to download ursh"
     elif command -v wget &>/dev/null; then
-        wget -qO "$TEMP_FILE" "$RAW_URL" || error_exit "Failed to download shurl"
+        wget -qO "$TEMP_FILE" "$RAW_URL" || error_exit "Failed to download ursh"
     fi
     
     if [[ ! -s "$TEMP_FILE" ]]; then
@@ -120,15 +120,15 @@ download_shurl() {
     fi
 }
 
-# Install shurl
-install_shurl() {
+# Install ursh
+install_ursh() {
     local install_path="$INSTALL_DIR/$BINARY_NAME"
     
     info "Installing to: $install_path"
     
     # Check if already exists
     if [[ -f "$install_path" ]]; then
-        warn "shurl already exists at $install_path"
+        warn "ursh already exists at $install_path"
         
         # Compare versions if possible
         if [[ -x "$install_path" ]]; then
@@ -162,7 +162,7 @@ check_path() {
     
     # Check if in PATH
     if command -v "$BINARY_NAME" &>/dev/null; then
-        success "shurl is available in your PATH"
+        success "ursh is available in your PATH"
         return
     fi
     
@@ -195,7 +195,7 @@ EOF
         esac
         
         echo ""
-        info "For now, you can run shurl with:"
+        info "For now, you can run ursh with:"
         echo "  $install_path --version"
     fi
 }
@@ -203,20 +203,20 @@ EOF
 # Show usage with dry-run examples
 show_usage() {
     echo ""
-    info "shurl installation complete!"
+    info "ursh installation complete!"
     echo ""
     echo "Try it out:"
-    echo "  shurl --version"
-    echo "  shurl --help"
+    echo "  ursh --version"
+    echo "  ursh --help"
     echo ""
     echo "Examples with dry-run:"
-    echo "  shurl --dry-run gh:day50-dev/shurl/examples/hello.sh"
-    echo "  shurl -n https://example.com/script.sh arg1 arg2"
-    echo "  shurl --dry-run gh:user/repo@develop/setup.sh"
+    echo "  ursh --dry-run gh:day50-dev/ursh/examples/hello.sh"
+    echo "  ursh -n https://example.com/script.sh arg1 arg2"
+    echo "  ursh --dry-run gh:user/repo@develop/setup.sh"
     echo ""
     echo "Regular usage:"
-    echo "  shurl gh:day50-dev/shurl/examples/hello.sh"
-    echo "  curl -s https://raw.githubusercontent.com/day50-dev/shurl/main/README.md | sd"
+    echo "  ursh gh:day50-dev/ursh/examples/hello.sh"
+    echo "  curl -s https://raw.githubusercontent.com/day50-dev/ursh/main/README.md | sd"
     echo ""
     echo "Documentation: $REPO_URL"
 }
@@ -239,8 +239,8 @@ ENDL
     trap 'echo -e "\n${RED}Installation cancelled${NC}"; cleanup; exit 1' INT
     
     check_requirements
-    download_shurl
-    install_shurl
+    download_ursh
+    install_ursh
     check_path
     show_usage
     

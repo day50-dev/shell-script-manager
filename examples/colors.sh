@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# colors.sh - Demonstrate colorful output with shurl
+# colors.sh - Demonstrate colorful output with ursh
 
 show_logo() {
     cat << "EOF"
@@ -40,7 +40,7 @@ BG_CYAN='\033[46m'
 BG_WHITE='\033[47m'
 
 show_colors() {
-    echo -e "${BOLD}🎨 shurl Color Demonstration${NC}"
+    echo -e "${BOLD}🎨 ursh Color Demonstration${NC}"
     echo "="=============================
     echo ""
     
@@ -74,39 +74,39 @@ show_colors() {
     echo -e "  ${BOLD}${RED}✗ Error:${NC} ${RED}Failed to download file${NC}"
     echo -e "  ${BOLD}${YELLOW}⚠ Warning:${NC} ${YELLOW}This action cannot be undone${NC}"
     echo -e "  ${BOLD}${CYAN}ℹ Info:${NC} ${CYAN}Downloading from GitHub...${NC}"
-    echo -e "  ${BOLD}${BLUE}→ Command:${NC} ${CYAN}shurl gh:user/repo/script.sh${NC}"
+    echo -e "  ${BOLD}${BLUE}→ Command:${NC} ${CYAN}ursh gh:user/repo/script.sh${NC}"
     
     echo ""
     echo -e "${BG_BLUE}${WHITE}${BOLD} Tip ${NC} ${BLUE}Scripts using colors are more user-friendly!${NC}"
 }
 
-show_shurl_examples() {
+show_ursh_examples() {
     echo ""
-    echo -e "${BOLD}🚀 shurl Usage Examples with Colors:${NC}"
+    echo -e "${BOLD}🚀 ursh Usage Examples with Colors:${NC}"
     echo "="=====================================
     echo ""
     
     echo -e "${GREEN}Basic usage:${NC}"
-    echo -e "  ${CYAN}shurl https://example.com/script.sh${NC}"
+    echo -e "  ${CYAN}ursh https://example.com/script.sh${NC}"
     echo ""
     
     echo -e "${YELLOW}GitHub shorthand:${NC}"
-    echo -e "  ${CYAN}shurl gh:user/repo/install.sh${NC}"
-    echo -e "  ${CYAN}shurl gh:user/repo@develop/setup.sh${NC}"
+    echo -e "  ${CYAN}ursh gh:user/repo/install.sh${NC}"
+    echo -e "  ${CYAN}ursh gh:user/repo@develop/setup.sh${NC}"
     echo ""
     
     echo -e "${BLUE}Safety features:${NC}"
-    echo -e "  ${CYAN}shurl ${BOLD}--dry-run${NC}${CYAN} gh:external/tool/install.sh${NC}"
-    echo -e "  ${CYAN}shurl ${BOLD}--update${NC}${CYAN} gh:team/scripts/deploy.sh${NC}"
-    echo -e "  ${CYAN}shurl ${BOLD}--clear-cache${NC}"
+    echo -e "  ${CYAN}ursh ${BOLD}--dry-run${NC}${CYAN} gh:external/tool/install.sh${NC}"
+    echo -e "  ${CYAN}ursh ${BOLD}--update${NC}${CYAN} gh:team/scripts/deploy.sh${NC}"
+    echo -e "  ${CYAN}ursh ${BOLD}--clear-cache${NC}"
     echo ""
     
     echo -e "${PURPLE}With arguments:${NC}"
-    echo -e "  ${CYAN}shurl gh:org/tool/run.sh ${YELLOW}--verbose --force --output=result.txt${NC}"
+    echo -e "  ${CYAN}ursh gh:org/tool/run.sh ${YELLOW}--verbose --force --output=result.txt${NC}"
     echo ""
     
     echo -e "${RED}Danger zone (preview first!):${NC}"
-    echo -e "  ${CYAN}shurl --dry-run https://unknown-source.com/install.sh${NC}"
+    echo -e "  ${CYAN}ursh --dry-run https://unknown-source.com/install.sh${NC}"
     echo -e "  ${GRAY}# Always preview scripts from untrusted sources${NC}"
 }
 
@@ -133,7 +133,7 @@ echo -e "${BOLD}${BLUE}Information:${NC} Processing data..."
 
 # For printf (no -e needed)
 printf "${YELLOW}Warning:${NC} This is a warning\n"
-printf "${CYAN}Command:${NC} shurl gh:user/repo/script.sh\n"
+printf "${CYAN}Command:${NC} ursh gh:user/repo/script.sh\n"
 
 # Remember: Always reset with ${NC}!
 EOF
@@ -148,19 +148,19 @@ main() {
     echo -e "${CYAN}🎨 Color Demonstration Script${NC}"
     echo ""
     echo -e "This script shows how ${BOLD}colorful output${NC} can improve"
-    echo -e "the user experience of shell scripts run via ${CYAN}shurl${NC}."
+    echo -e "the user experience of shell scripts run via ${CYAN}ursh${NC}."
     echo ""
     
     show_colors
-    show_shurl_examples
+    show_ursh_examples
     show_color_code
     
     echo ""
     echo -e "${GREEN}${BOLD}✓ Try it yourself:${NC}"
-    echo -e "  ${CYAN}shurl --dry-run gh:day50-dev/shurl/examples/colors.sh${NC}"
-    echo -e "  ${CYAN}shurl gh:day50-dev/shurl/examples/colors.sh${NC}"
+    echo -e "  ${CYAN}ursh --dry-run gh:day50-dev/ursh/examples/colors.sh${NC}"
+    echo -e "  ${CYAN}ursh gh:day50-dev/ursh/examples/colors.sh${NC}"
     echo ""
-    echo -e "${GRAY}Script cached at: $HOME/.cache/shurl/$(echo "https://raw.githubusercontent.com/day50-dev/shurl/main/examples/colors.sh" | sha256sum | cut -d' ' -f1).sh${NC}"
+    echo -e "${GRAY}Script cached at: $HOME/.cache/ursh/$(echo "https://raw.githubusercontent.com/day50-dev/ursh/main/examples/colors.sh" | sha256sum | cut -d' ' -f1).sh${NC}"
     
     echo ""
     echo -e "${BG_CYAN}${WHITE}${BOLD} Remember ${NC} ${CYAN}Use colors to make your scripts more readable and user-friendly!${NC}"

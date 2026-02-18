@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# hello.sh - Example script that demonstrates shurl features
+# hello.sh - Example script that demonstrates ursh features
 
 show_logo() {
     cat << "EOF"
@@ -19,9 +19,9 @@ show_usage() {
     cat << "EOF"
 
 USAGE EXAMPLES:
-  shurl gh:day50-dev/shurl/examples/hello.sh
-  shurl gh:day50-dev/shurl/examples/hello.sh "Your Name"
-  shurl --dry-run gh:day50-dev/shurl/examples/hello.sh
+  ursh gh:day50-dev/ursh/examples/hello.sh
+  ursh gh:day50-dev/ursh/examples/hello.sh "Your Name"
+  ursh --dry-run gh:day50-dev/ursh/examples/hello.sh
 
 FEATURES DEMONSTRATED:
   ✓ GitHub shorthand (gh: prefix)
@@ -30,8 +30,8 @@ FEATURES DEMONSTRATED:
   ✓ Shell script portability
 
 CACHE LOCATION:
-  Linux:   ~/.cache/shurl
-  macOS:   ~/Library/Caches/shurl
+  Linux:   ~/.cache/ursh
+  macOS:   ~/Library/Caches/ursh
 
 EOF
 }
@@ -39,7 +39,7 @@ EOF
 main() {
     show_logo
     
-    echo "👋 Hello from shurl!"
+    echo "👋 Hello from ursh!"
     
     if [[ -n "$1" ]]; then
         echo "   Welcome, $1!"
@@ -47,7 +47,7 @@ main() {
     
     echo ""
     echo "📊 This script was executed via:"
-    echo "   shurl gh:day50-dev/shurl/examples/hello.sh${1:+ $1}"
+    echo "   ursh gh:day50-dev/ursh/examples/hello.sh${1:+ $1}"
     
     echo ""
     echo "🎯 Total arguments: $#"
@@ -62,9 +62,9 @@ main() {
     show_usage
     
     echo "🔍 Try these other examples:"
-    echo "   shurl gh:day50-dev/shurl/examples/colors.sh"
-    echo "   shurl --dry-run gh:day50-dev/shurl/examples/args.sh"
-    echo "   shurl --version"
+    echo "   ursh gh:day50-dev/ursh/examples/colors.sh"
+    echo "   ursh --dry-run gh:day50-dev/ursh/examples/args.sh"
+    echo "   ursh --version"
 }
 
 main "$@"
