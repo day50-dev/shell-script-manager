@@ -92,7 +92,7 @@ main() {
                     # Handle long flags
                     case "$1" in
                         --dry-run|--dryrun) DRY_RUN=true ;;
-                        --update) FORCE_UPDATE=true ;;
+                        --update|--upgrade) FORCE_UPDATE=true ;;
                         --quiet) QUIET=true ;;
                         --install) INSTALL_MODE=true ;;
                         -l|--list) LIST_MODE=true ;;
