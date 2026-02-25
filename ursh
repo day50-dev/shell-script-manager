@@ -11,7 +11,7 @@
 #        ursh --guard <type>      # Run through container/guard (chroot, docker)
 set -euo pipefail
 
-VERSION="0.7.2"
+VERSION="0.7.3"
 
 detect_cache_dir() {
     local os_cache_dir
@@ -193,6 +193,7 @@ main() {
     
     # Handle install mode
     if [[ "$INSTALL_MODE" == true ]]; then
+        install_script "$cached_file" "$ursh_url" "$user_input"
         [[ "$FORCE_UPDATE" == true ]] || return 0
     fi
     
