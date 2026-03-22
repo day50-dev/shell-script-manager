@@ -1,6 +1,6 @@
 <p align="center">
-<img width="469" height="194" alt="logo_sm" src="https://github.com/user-attachments/assets/fb5f3cb9-b360-4d13-8e2f-11cf01cb27af" />
-<br/><strong>Like npx or uvx, but for shell scripts</strong>
+  <img width="460" height="181" alt="logo" src="https://github.com/user-attachments/assets/dd34cef1-1164-4d77-a76e-3d8caf58a233" />
+  <br/><strong>Like npx or uvx, but for shell scripts</strong>
 </p>
 
 **ursh** is a simple tool that runs shell scripts from URLs. Think of it as a better alternative to `curl https://example.com/script.sh | bash`.
