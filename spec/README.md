@@ -128,6 +128,7 @@ privileges:
 
 - [Main URSHI README](../README.md) - Overview of the ursh concept
 - [URSHI Manifest Spec](./URSHI-MANIFEST-SPEC.md) - Detailed specification
+- [URSHI Policy Spec](./URSHI-POLICY-SPEC.md) - Policy enforcement specification
 
 ## Contributing
 
