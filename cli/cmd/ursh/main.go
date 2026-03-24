@@ -55,8 +55,14 @@ func (e exitError) Error() string {
 }
 
 func run(args []string) error {
+	// Check for stdin input (pipe or redirect) - do this BEFORE parseFlags
+	// because parseFlags will treat "-" as an unknown option
 	if len(args) == 0 {
-		return exitError{msg: "No URL provided.\n\nUsage: ursh [OPTIONS] <url> [args...]\nSee 'ursh --help' for more information."}
+		return handleStdin()
+	}
+	if len(args) == 1 && args[0] == "-" {
+		// Special case: explicit "-" means read from stdin
+		return handleStdin()
 	}
 
 	// Parse flags - pass all args so we can get script args back
@@ -342,8 +348,9 @@ func resolveScript(url string, forceUpdate, dryRun bool) (string, error) {
 	}
 
 	// Check if it's a manifest file (no shebang = not a shell script = assume manifest)
+	// Also handle process substitution paths like /dev/fd/63
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
-		if !hasShebang(url) {
+		if !hasShebang(url) || isInlineManifest(url) {
 			manifest, scriptPath, err := loadUrshiManifest(url, dryRun)
 			if err != nil {
 				return "", err
@@ -814,6 +821,96 @@ func hasShebang(path string) bool {
 		return false
 	}
 	return strings.HasPrefix(strings.TrimSpace(lines[0]), "#!")
+}
+
+// isInlineManifest checks if a path should be treated as inline manifest content
+// This handles process substitution like <(cat file.yaml)
+func isInlineManifest(path string) bool {
+	return strings.HasPrefix(path, "/dev/fd/") || strings.HasPrefix(path, "/proc/self/fd/")
+}
+
+// handleStdin handles reading a manifest from stdin (e.g., urchin output piped to ursh)
+func handleStdin() error {
+	// Check if stdin is a pipe or was redirected
+	stat, _ := os.Stdin.Stat()
+	isPipe := (stat.Mode() & os.ModeNamedPipe) != 0
+	
+	// If no pipe and no "-" argument, show usage
+	if !isPipe && len(os.Args) > 1 && os.Args[1] != "-" {
+		return exitError{msg: "No URL provided.\n\nUsage: ursh [OPTIONS] <url> [args...]\n       cat manifest.yaml | ursh -\n       urchin script.sh | ursh -\nSee 'ursh --help' for more information."}
+	}
+
+	// Read from stdin
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return fmt.Errorf("failed to read stdin: %w", err)
+	}
+
+	if len(data) == 0 {
+		return exitError{msg: "Empty stdin - no manifest data received"}
+	}
+
+	// Try to parse as YAML manifest
+	var manifest UrshiManifest
+	if err := yaml.Unmarshal(data, &manifest); err != nil {
+		// Not valid YAML - might be a shell script piped in
+		// Check if it has a shebang
+		if strings.HasPrefix(strings.TrimSpace(string(data)), "#!") {
+			return exitError{msg: "Stdin contains a shell script, not a manifest. Use a URL or file path instead."}
+		}
+		return fmt.Errorf("failed to parse stdin as manifest: %w", err)
+	}
+
+	// Validate we have a URL
+	if manifest.URL == "" {
+		return fmt.Errorf("manifest has no 'url' field - cannot determine script to run")
+	}
+
+	// Store manifest for policy enforcement
+	currentManifest = &manifest
+
+	// Show what we're doing
+	fmt.Fprintf(os.Stderr, "📥 Received manifest from stdin\n")
+	fmt.Fprintf(os.Stderr, "   Name: %s\n", manifest.Name)
+	fmt.Fprintf(os.Stderr, "   Description: %s\n", manifest.Description)
+	fmt.Fprintf(os.Stderr, "   Script URL: %s\n", manifest.URL)
+
+	// Resolve the script URL (download/copy to cache)
+	scriptPath, err := resolveScript(manifest.URL, false, false)
+	if err != nil {
+		return fmt.Errorf("failed to resolve script: %w", err)
+	}
+
+	// If script path looks like a file descriptor (from process substitution),
+	// we need to copy it to a real file we can execute
+	if strings.HasPrefix(scriptPath, "/dev/fd/") {
+		srcData, err := os.ReadFile(scriptPath)
+		if err != nil {
+			return fmt.Errorf("failed to read script from fd: %w", err)
+		}
+		// Save to a temp file
+		tmpScript := filepath.Join(os.TempDir(), fmt.Sprintf("ursh-manifest-%d.sh", os.Getpid()))
+		if err := os.WriteFile(tmpScript, srcData, 0755); err != nil {
+			return fmt.Errorf("failed to write temp script: %w", err)
+		}
+		scriptPath = tmpScript
+	}
+
+	fmt.Fprintf(os.Stderr, "   Script: %s\n", scriptPath)
+
+	// Enforce policies before execution
+	policyDir := detectPolicyDir()
+	if _, err := os.Stat(policyDir); err == nil {
+		fmt.Fprintf(os.Stderr, "\n🔒 Running with policy enforcement...\n")
+		if err := enforcePolicies(scriptPath, manifest.URL); err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "\n⚠️  No policies found at %s - running without policy enforcement\n", policyDir)
+	}
+
+	// Execute the script
+	return execScript(scriptPath, nil)
 }
 
 // loadUrshiManifest loads a .urshi.yaml manifest file and returns the manifest and script path

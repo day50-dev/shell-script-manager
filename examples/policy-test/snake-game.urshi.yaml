@@ -3,7 +3,7 @@
 
 name: snake-game
 description: A classic snake game in bash that tries to read high scores
-url: ./snake-game.sh
+url: file:///home/chris/code/ursh/examples/policy-test/snake-game.sh
 homepage: https://github.com/ursh/examples
 readme: |
   # Snake Game Example
