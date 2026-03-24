@@ -18,44 +18,33 @@ def main():
     """Main CLI entry point"""
     parser = argparse.ArgumentParser(
         prog="urshin",
-        description="Generate urshi manifests from script URLs"
+        description="Generate urshi manifests from script URLs",
+        usage="%(prog)s [options] <url>"
     )
-    
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
-    
-    # Create command
-    create_parser = subparsers.add_parser(
-        "create",
-        help="Generate a urshi manifest from a URL"
-    )
-    create_parser.add_argument(
+
+    parser.add_argument(
         "url",
-        help="Script URL (e.g., gh:user/repo/script.sh)"
+        help="Script URL (e.g., gh:user/repo/script.sh) or local file path"
     )
-    create_parser.add_argument(
+    parser.add_argument(
         "-o", "--output",
         choices=["yaml", "json"],
         default="yaml",
         help="Output format (default: yaml)"
     )
-    create_parser.add_argument(
+    parser.add_argument(
         "-O", "--output-file",
         help="Write output to file instead of stdout"
     )
-    create_parser.add_argument(
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Show progress and reasoning"
     )
-    
+
     args = parser.parse_args()
-    
-    if args.command is None:
-        parser.print_help()
-        sys.exit(0)
-    
-    if args.command == "create":
-        asyncio.run(cmd_create(args))
+
+    asyncio.run(cmd_create(args))
 
 
 async def cmd_create(args):

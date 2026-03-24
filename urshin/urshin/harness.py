@@ -32,6 +32,7 @@ class InferenceContext:
     """Shared context between inference passes"""
     url: str
     normalized_url: str = ""
+    is_local_file: bool = False
     script_content: str = ""
     checksum: str = ""
     homepage: Optional[str] = None
@@ -71,17 +72,33 @@ class InferenceHarness:
     
     async def infer(self, url: str) -> Dict:
         """Run full inference pipeline"""
-        self.context = InferenceContext(url=url)
+        import os
         
+        self.context = InferenceContext(url=url)
+
         try:
             await self._fetch_script(url)
             await self._pass0_static_analysis()
-            await self._pass1_find_homepage()
-            await self._pass2_find_readme()
-            await self._pass3_infer_name()
-            await self._pass4_find_source()
-            await self._pass5_find_license()
-            await self._pass6_detect_compliance()
+            
+            # Skip web-based inference for local files
+            if self.context.is_local_file:
+                log("INFO", "Local file detected, skipping web-based inference")
+                # For local files, derive name from filename
+                basename = os.path.basename(url)
+                name = os.path.splitext(basename)[0]
+                self.context.name = name
+                self.context.confidence_scores["name"] = 0.5
+            else:
+                await self._pass1_find_homepage()
+                await self._pass2_find_readme()
+                await self._pass3_infer_name()
+                await self._pass4_find_source()
+                await self._pass5_find_license()
+            
+            # Pass 6 (compliance) requires homepage context, skip for local files
+            if not self.context.is_local_file:
+                await self._pass6_detect_compliance()
+            
             await self._pass7_analyze_privileges()
             self._calculate_confidence()
             return self._build_result()
@@ -91,16 +108,26 @@ class InferenceHarness:
             return self._build_result()
     
     async def _fetch_script(self, url: str):
-        """Fetch script content and normalize URL"""
-        from .url_parser import normalize_url, fetch_content
+        """Fetch script content from URL or local file"""
+        import os
         
-        normalized = normalize_url(url)
-        self.context.normalized_url = normalized
-        content = await fetch_content(normalized)
-        self.context.script_content = content
-        self.context.checksum = hashlib.sha256(content.encode()).hexdigest()
-        
-        log("INFO", "✓ Fetched %d bytes", len(content))
+        # Check if it's a local file path
+        if os.path.isfile(url):
+            with open(url, 'r') as f:
+                content = f.read()
+            self.context.normalized_url = f"file://{os.path.abspath(url)}"
+            self.context.is_local_file = True
+            self.context.script_content = content
+            self.context.checksum = hashlib.sha256(content.encode()).hexdigest()
+            log("INFO", "✓ Read %d bytes from local file", len(content))
+        else:
+            from .url_parser import normalize_url, fetch_content
+            normalized = normalize_url(url)
+            self.context.normalized_url = normalized
+            content = await fetch_content(normalized)
+            self.context.script_content = content
+            self.context.checksum = hashlib.sha256(content.encode()).hexdigest()
+            log("INFO", "✓ Fetched %d bytes", len(content))
     
     async def _pass0_static_analysis(self):
         """Run bash -n and shellcheck"""
