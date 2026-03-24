@@ -17,7 +17,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const version = "0.7.3"
+// version information set via ldflags at build time.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
 
 // URSH_API_URL is the base URL for the ursh registry API
 const URSH_API_URL = "https://ursh.dev"
@@ -70,7 +75,7 @@ func run(args []string) error {
 		return nil
 	}
 	if parsed.versionFlag {
-		fmt.Printf("ursh v%s\n", version)
+		fmt.Printf("ursh %s (commit: %s, built: %s)\n", version, commit, date)
 		return nil
 	}
 	if parsed.clearCache {

@@ -2,11 +2,9 @@
 
 # ursh installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/day50-dev/ursh/main/install.sh | bash
+# Or via the stable bootstrap:  curl -sSL day50.dev/ursh | bash
 
 set -euo pipefail
-
-# Version
-VERSION="1.1.0"
 
 # Colors
 RED='\033[0;31m'
@@ -15,217 +13,245 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Detect OS and set install directory
-detect_install_dir() {
-    local os_name
-    os_name="$(uname -s)"
-    
-    case "$os_name" in
-        Darwin*)
-            # macOS: prefer ~/.local/bin, fallback to /usr/local/bin
-            if [[ -d "$HOME/.local/bin" && -w "$HOME/.local/bin" ]]; then
-                echo "$HOME/.local/bin"
-            elif [[ -d "/usr/local/bin" ]]; then
-                echo "/usr/local/bin"
-            else
-                echo "$HOME/.local/bin"
-            fi
-            ;;
-        Linux*|*BSD*)
-            # Linux/BSD: XDG bin directory, fallback to system
-            if [[ -d "$HOME/.local/bin" && -w "$HOME/.local/bin" ]]; then
-                echo "$HOME/.local/bin"
-            elif [[ -d "/usr/local/bin" ]]; then
-                echo "/usr/local/bin"
-            else
-                echo "$HOME/.local/bin"
-            fi
-            ;;
-        *)
-            # Other: fallback to ~/.local/bin
-            echo "$HOME/.local/bin"
-            ;;
-    esac
-}
-
-# Defaults
 BINARY_NAME="ursh"
-REPO_URL="https://github.com/day50-dev/ursh"
-RAW_URL="https://raw.githubusercontent.com/day50-dev/ursh/main/ursh"
-INSTALL_DIR="${INSTALL_DIR:-$(detect_install_dir)}"
-TEMP_FILE=""
+REPO="day50-dev/ursh"
+INSTALL_DIR="${PREFIX:-${INSTALL_DIR:-}}"
+TEMP_DIR=""
 
-# Cleanup
-cleanup() {
-    if [[ -n "$TEMP_FILE" && -f "$TEMP_FILE" ]]; then
-        rm -f "$TEMP_FILE"
-    fi
-}
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-# Error handler
+success() { echo -e "${GREEN}$1${NC}"; }
+info()    { echo -e "${BLUE}$1${NC}"; }
+warn()    { echo -e "${YELLOW}$1${NC}"; }
 error_exit() {
     echo -e "${RED}Error: $1${NC}" >&2
     cleanup
     exit 1
 }
 
-# Messages
-success() { echo -e "${GREEN}$1${NC}"; }
-info() { echo -e "${BLUE}$1${NC}"; }
-warn() { echo -e "${YELLOW}$1${NC}"; }
-
-# Check requirements
-check_requirements() {
-    if ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
-        error_exit "curl or wget is required to install ursh"
-    fi
-    
-    info "Detected OS: $(uname -s)"
-    info "Install directory: $INSTALL_DIR"
-    
-    # Ensure install directory exists
-    if [[ ! -d "$INSTALL_DIR" ]]; then
-        info "Creating directory: $INSTALL_DIR"
-        mkdir -p "$INSTALL_DIR" || error_exit "Failed to create $INSTALL_DIR"
-    fi
-    
-    # Check write permissions
-    if [[ ! -w "$INSTALL_DIR" ]]; then
-        warn "Directory $INSTALL_DIR is not writable"
-        echo "We'll try to use sudo for installation"
+cleanup() {
+    if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR" ]]; then
+        rm -rf "$TEMP_DIR"
     fi
 }
 
-# Download ursh
-download_ursh() {
-    info "Downloading ursh from GitHub..."
-    
-    TEMP_FILE=$(mktemp /tmp/ursh-install-XXXXXX)
-    
+trap cleanup EXIT
+trap 'echo -e "\n${RED}Installation cancelled${NC}"; cleanup; exit 1' INT TERM
+
+# ---------------------------------------------------------------------------
+# Platform detection
+# ---------------------------------------------------------------------------
+
+detect_platform() {
+    local os arch
+
+    os="$(uname -s)"
+    arch="$(uname -m)"
+
+    case "$os" in
+        Linux)  os="linux"  ;;
+        Darwin) os="darwin" ;;
+        *)
+            warn "Unsupported OS: $os"
+            os=""
+            ;;
+    esac
+
+    case "$arch" in
+        x86_64)          arch="amd64" ;;
+        aarch64|arm64)   arch="arm64" ;;
+        *)
+            warn "Unsupported architecture: $arch"
+            arch=""
+            ;;
+    esac
+
+    PLATFORM_OS="$os"
+    PLATFORM_ARCH="$arch"
+}
+
+# ---------------------------------------------------------------------------
+# Install directory
+# ---------------------------------------------------------------------------
+
+detect_install_dir() {
+    if [[ -n "$INSTALL_DIR" ]]; then
+        return
+    fi
+
+    INSTALL_DIR="$(python3 -msite --user-base)/bin"
+}
+
+# ---------------------------------------------------------------------------
+# Download helpers
+# ---------------------------------------------------------------------------
+
+download_file() {
+    local url="$1" dest="$2"
     if command -v curl &>/dev/null; then
-        curl -fsSL "$RAW_URL" -o "$TEMP_FILE" || error_exit "Failed to download ursh"
+        curl -fsSL "$url" -o "$dest"
     elif command -v wget &>/dev/null; then
-        wget -qO "$TEMP_FILE" "$RAW_URL" || error_exit "Failed to download ursh"
-    fi
-    
-    if [[ ! -s "$TEMP_FILE" ]]; then
-        error_exit "Downloaded file is empty"
-    fi
-    
-    chmod +x "$TEMP_FILE" || error_exit "Failed to make executable"
-    
-    # Verify it's bash
-    if ! head -n 1 "$TEMP_FILE" | grep -q "bash"; then
-        error_exit "Downloaded file doesn't appear to be a bash script"
+        wget -qO "$dest" "$url"
+    else
+        error_exit "curl or wget is required to download ursh"
     fi
 }
 
-# Install ursh
-install_ursh() {
-    local install_path="$INSTALL_DIR/$BINARY_NAME"
-    
-    info "Installing to: $install_path"
-    
-    # Check if already exists
-    if [[ -f "$install_path" ]]; then
-        warn "ursh already exists at $install_path"
-        
-        # Compare versions if possible
-        if [[ -x "$install_path" ]]; then
-            local current_version
-            if current_version=$("$install_path" --version 2>/dev/null); then
-                info "Current version: $current_version"
-            fi
-        fi
+# ---------------------------------------------------------------------------
+# Verify checksum (best-effort)
+# ---------------------------------------------------------------------------
+
+verify_checksum() {
+    local archive="$1" checksums_file="$2" archive_name
+    archive_name="$(basename "$archive")"
+
+    local expected
+    expected="$(grep "$archive_name" "$checksums_file" | awk '{print $1}')" || true
+    if [[ -z "$expected" ]]; then
+        warn "No checksum entry found for $archive_name – skipping verification"
+        return 0
     fi
-    
-    # Copy file
-    if cp "$TEMP_FILE" "$install_path" 2>/dev/null; then
-        success "Installed successfully"
-    elif sudo cp "$TEMP_FILE" "$install_path"; then
-        success "Installed with sudo"
+
+    local actual
+    if command -v md5sum &>/dev/null; then
+        actual="$(md5sum "$archive" | awk '{print $1}')"
     else
-        error_exit "Failed to install to $install_path"
+        actual="$(md5 -q "$archive")"
     fi
-    
-    # Ensure executable
-    if [[ -w "$install_path" ]]; then
-        chmod +x "$install_path" || warn "Could not set executable bit (but may already be executable)"
+
+    if [[ "$actual" != "$expected" ]]; then
+        error_exit "Checksum mismatch for $archive_name\n  expected: $expected\n  got:      $actual"
+    fi
+    success "Checksum verified ✓"
+}
+
+# ---------------------------------------------------------------------------
+# Try to install from prebuilt GitHub Release binary
+# ---------------------------------------------------------------------------
+
+install_from_release() {
+    [[ -z "$PLATFORM_OS" || -z "$PLATFORM_ARCH" ]] && return 1
+
+    info "Fetching latest release information..."
+
+    local latest_url="https://api.github.com/repos/${REPO}/releases/latest"
+    local release_json tag_name
+
+    TEMP_DIR="$(mktemp -d /tmp/ursh-install-XXXXXX)"
+
+    release_json="$TEMP_DIR/release.json"
+    if ! download_file "$latest_url" "$release_json" 2>/dev/null; then
+        warn "Could not reach GitHub API"
+        return 1
+    fi
+
+    # Parse tag_name with minimal tooling (avoid jq dependency)
+    tag_name="$(grep -m1 '"tag_name"' "$release_json" | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')" || true
+    if [[ -z "$tag_name" ]]; then
+        warn "Could not determine latest release tag"
+        return 1
+    fi
+
+    local archive_name="ursh_${tag_name}_${PLATFORM_OS}_${PLATFORM_ARCH}.tar.gz"
+    local base_url="https://github.com/${REPO}/releases/download/${tag_name}"
+    local archive_url="${base_url}/${archive_name}"
+    local checksums_url="${base_url}/checksums.txt"
+
+    info "Downloading ${archive_name}..."
+    if ! download_file "$archive_url" "$TEMP_DIR/${archive_name}" 2>/dev/null; then
+        warn "Prebuilt binary not available for ${PLATFORM_OS}/${PLATFORM_ARCH} (tag: ${tag_name})"
+        return 1
+    fi
+
+    # Download and verify checksums (best-effort)
+    if download_file "$checksums_url" "$TEMP_DIR/checksums.txt" 2>/dev/null; then
+        verify_checksum "$TEMP_DIR/${archive_name}" "$TEMP_DIR/checksums.txt"
     else
-        sudo chmod +x "$install_path" || warn "Could not set executable bit with sudo"
+        warn "Could not download checksums.txt – skipping checksum verification"
+    fi
+
+    info "Extracting archive..."
+    if ! tar -xzf "$TEMP_DIR/${archive_name}" -C "$TEMP_DIR" ursh 2>/dev/null; then
+        warn "Failed to extract binary from archive: ${archive_name}"
+        return 1
+    fi
+
+    install_binary "$TEMP_DIR/ursh"
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Fallback: go install
+# ---------------------------------------------------------------------------
+
+install_from_go() {
+    if ! command -v go &>/dev/null; then
+        return 1
+    fi
+
+    info "Falling back to: go install github.com/${REPO}/go/cmd/ursh@latest"
+    GOBIN="$INSTALL_DIR" go install "github.com/${REPO}/go/cmd/ursh@latest" || return 1
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Place the binary
+# ---------------------------------------------------------------------------
+
+install_binary() {
+    local src="$1"
+    local dest="$INSTALL_DIR/$BINARY_NAME"
+
+    chmod +x "$src"
+
+    if [[ -f "$dest" ]]; then
+        warn "Replacing existing ursh at $dest"
+    fi
+
+    if cp "$src" "$dest" 2>/dev/null; then
+        chmod +x "$dest"
+        success "Installed ursh → $dest"
+    elif sudo cp "$src" "$dest" && sudo chmod +x "$dest"; then
+        success "Installed ursh → $dest (via sudo)"
+    else
+        error_exit "Failed to install to $dest"
     fi
 }
 
-# Add to PATH if needed
+# ---------------------------------------------------------------------------
+# PATH reminder
+# ---------------------------------------------------------------------------
+
 check_path() {
-    local install_path="$INSTALL_DIR/$BINARY_NAME"
-    
-    # Check if in PATH
     if command -v "$BINARY_NAME" &>/dev/null; then
         success "ursh is available in your PATH"
         return
     fi
-    
-    # Check if the install directory is in PATH
+
     if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
-        warn "Note: $INSTALL_DIR is not in your PATH"
+        warn "$INSTALL_DIR is not in your PATH"
         echo ""
-        
-        case "$(uname -s)" in
-            Darwin*)
-                cat << EOF
-To add it to your PATH, add this to your ~/.zshrc or ~/.bash_profile:
-
-    export PATH="\$HOME/.local/bin:\$PATH"
-
-Then run:
-    source ~/.zshrc  # or ~/.bash_profile
-EOF
-                ;;
-            Linux*|*BSD*)
-                cat << EOF
-To add it to your PATH, add this to your ~/.bashrc or ~/.zshrc:
-
-    export PATH="\$HOME/.local/bin:\$PATH"
-
-Then run:
-    source ~/.bashrc  # or ~/.zshrc
-EOF
-                ;;
-        esac
-        
+        echo "Add it to your shell config (~/.bashrc, ~/.zshrc, etc.):"
         echo ""
-        info "For now, you can run ursh with:"
-        echo "  $install_path --version"
+        echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
+        echo ""
+        echo "Then reload: source ~/.bashrc  # or ~/.zshrc"
+        echo ""
+        info "For now, run ursh directly with:"
+        echo "    $INSTALL_DIR/$BINARY_NAME --version"
     fi
 }
 
-# Show usage with dry-run examples
-show_usage() {
-    echo ""
-    info "ursh installation complete!"
-    echo ""
-    echo "Try it out:"
-    echo "  ursh --version"
-    echo "  ursh --help"
-    echo ""
-    echo "Examples with dry-run:"
-    echo "  ursh --dry-run gh:day50-dev/ursh/examples/hello.sh"
-    echo "  ursh -n https://example.com/script.sh arg1 arg2"
-    echo "  ursh --dry-run gh:user/repo@develop/setup.sh"
-    echo ""
-    echo "Regular usage:"
-    echo "  ursh gh:day50-dev/ursh/examples/hello.sh"
-    echo "  curl -s https://raw.githubusercontent.com/day50-dev/ursh/main/README.md | sd"
-    echo ""
-    echo "Documentation: $REPO_URL"
-}
+# ---------------------------------------------------------------------------
+# Banner + main
+# ---------------------------------------------------------------------------
 
-# Main
-main() {
-     cat << ENDL
+print_banner() {
+    cat << 'ENDL'
       ____  ___   _     ____________
-     / __ \/   | ( )  _/_/ ____/ __ \\
+     / __ \/   | ( )  _/_/ ____/ __ \
     / / / / /| |  V _/_//___ \/ / / /
    / /_/ / ___ |  _/_/ ____/ / /_/ /
   /_____/_/  |_| /_/  /_____/\____/
@@ -234,17 +260,45 @@ main() {
     50 Days In And Beyond
 
 ENDL
-    
-    trap cleanup EXIT
-    trap 'echo -e "\n${RED}Installation cancelled${NC}"; cleanup; exit 1' INT
-    
-    check_requirements
-    download_ursh
-    install_ursh
+}
+
+main() {
+    print_banner
+
+    detect_platform
+    detect_install_dir
+
+    info "OS:              ${PLATFORM_OS:-unknown}"
+    info "Architecture:    ${PLATFORM_ARCH:-unknown}"
+    info "Install dir:     $INSTALL_DIR"
+    echo ""
+
+    if [[ ! -d "$INSTALL_DIR" ]]; then
+        info "Creating $INSTALL_DIR"
+        mkdir -p "$INSTALL_DIR" || error_exit "Failed to create $INSTALL_DIR"
+    fi
+
+    # 1. Try prebuilt binary from GitHub Releases
+    if install_from_release; then
+        true
+    # 2. Fallback: go install
+    elif install_from_go; then
+        true
+    else
+        error_exit "Installation failed.\n\nOptions:\n  - Install Go and re-run this script, or\n  - Download a prebuilt binary from https://github.com/${REPO}/releases"
+    fi
+
+    echo ""
     check_path
-    show_usage
-    
-    cleanup
+    echo ""
+    success "Installation complete!"
+    echo ""
+    echo "Try it out:"
+    echo "  ursh --version"
+    echo "  ursh --help"
+    echo "  ursh --dry-run gh:day50-dev/ursh/examples/hello.sh"
+    echo ""
+    echo "Documentation: https://github.com/${REPO}"
 }
 
 main "$@"
