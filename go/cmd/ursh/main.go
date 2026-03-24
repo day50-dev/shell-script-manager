@@ -2,9 +2,11 @@ package main
 
 import (
 	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +18,9 @@ import (
 )
 
 const version = "0.7.3"
+
+// URSH_API_URL is the base URL for the ursh registry API
+const URSH_API_URL = "https://ursh.dev"
 
 var (
 	dryRun       bool
@@ -81,7 +86,12 @@ func run(args []string) error {
 		return exitError{msg: "No URL provided.\n\nUsage: ursh [OPTIONS] <url> [args...]\nSee 'ursh --help' for more information."}
 	}
 
-	// Process URL
+	// Check if this is an ursh: registry lookup
+	if strings.HasPrefix(parsed.url, "ursh:") {
+		return handleUrshRegistry(parsed)
+	}
+
+	// Process URL - regular URL or local file (no policy enforcement by default)
 	scriptPath, err := resolveScript(parsed.url, parsed.forceUpdate, parsed.dryRun)
 	if err != nil {
 		return err
@@ -108,13 +118,7 @@ func run(args []string) error {
 		return nil
 	}
 
-	// Execute script - enforce policies unless disabled, dry-run, or guard mode
-	// Skip policy for: --dry-run (just preview), --install (just save), --guard (already sandboxed)
-	if !parsed.noPolicyMode && !parsed.dryRun && parsed.guardType == "" && !parsed.installMode {
-		if err := enforcePolicies(scriptPath, parsed.url); err != nil {
-			return err
-		}
-	}
+	// Execute script - policies only apply for ursh: registry lookups
 	return execScript(scriptPath, parsed.scriptArgs)
 }
 
@@ -645,6 +649,8 @@ Short flags can be combined: -nu, -nuq, etc.
 Examples:
   ursh https://example.com/script.sh
   ursh gh:user/repo/script.sh
+  ursh ursh:free-ollama       # Search ursh.dev registry
+  ursh ursh:https://example.com/script.sh  # Search by URL
   ursh path/to/local/script.sh
   ursh -u gh:user/repo/setup.sh                # Force fresh download
   ursh -n gh:user/repo/setup.sh                # Preview execution
@@ -654,6 +660,11 @@ Examples:
   ursh --guard chroot path/to/script.sh        # Run in chroot
   ursh --guard docker gh:user/repo/tool.sh     # Run in docker
   ursh --clear-cache
+
+Ursh registry (ursh:name):
+  ursh:free-ollama           # Search ursh.dev by name
+  ursh:gh:user/repo/script   # Search ursh.dev by URL
+  # If not found: offers (1) run locally via urchin, (2) run without checks, (3) request add
 
 GitHub shorthand:
   gh:user/repo/file           -> https://raw.githubusercontent.com/user/repo/main/file
@@ -1258,4 +1269,300 @@ func decisionToString(d Decision) string {
 	default:
 		return "UNKNOWN"
 	}
+}
+
+// ==================== Ursh Registry (ursh:) Support ====================
+
+// Urshie represents an urshi from the registry
+type Urshie struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	ScriptURL   string `json:"script_url"`
+	HomepageURL string `json:"homepage_url"`
+}
+
+// UrshieSearchResult represents the API response
+type UrshieSearchResult struct {
+	Data []Urshie `json:"data"`
+}
+
+// handleUrshRegistry handles ursh:<name> lookups
+func handleUrshRegistry(parsed parsedFlags) error {
+	// Extract the name from ursh:<name>
+	name := strings.TrimPrefix(parsed.url, "ursh:")
+	name = strings.TrimSpace(name)
+
+	if name == "" {
+		return fmt.Errorf("Invalid ursh: format. Use: ursh:<name> or ursh:<url>\n\nExample: ursh:free-ollama")
+	}
+
+	fmt.Fprintf(os.Stderr, "🔍 Looking up '%s' in ursh registry...\n", name)
+
+	// Determine search query - self-detect if it looks like a URL
+	searchQuery := name
+	isURL := strings.HasPrefix(name, "http://") || strings.HasPrefix(name, "https://") ||
+		strings.HasPrefix(name, "gh:") || strings.HasPrefix(name, "github.com")
+
+	if isURL {
+		fmt.Fprintf(os.Stderr, "   Detected URL format, searching by URL...\n")
+	} else {
+		fmt.Fprintf(os.Stderr, "   Detected name format, searching by name...\n")
+	}
+
+	// Search the ursh.dev API
+	urshie, err := searchUrshie(searchQuery, isURL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "   Search failed: %v\n", err)
+	}
+
+	if urshie != nil {
+		// Found in registry - download and run with policy enforcement
+		fmt.Fprintf(os.Stderr, "✅ Found: %s\n", urshie.Name)
+		if urshie.Description != "" {
+			fmt.Fprintf(os.Stderr, "   Description: %s\n", urshie.Description)
+		}
+		fmt.Fprintf(os.Stderr, "   Script: %s\n", urshie.ScriptURL)
+
+		return runUrshieWithPolicy(urshie, parsed)
+	}
+
+	// Not found - offer 3 options
+	fmt.Fprintf(os.Stderr, "\n❌ '%s' not found in ursh registry\n", name)
+	return promptNotFoundActions(name, parsed)
+}
+
+// searchUrshie searches the ursh.dev API for an urshi
+func searchUrshie(query string, isURL bool) (*Urshie, error) {
+	// Build the API URL
+	apiURL := URSH_API_URL + "/api/urshies"
+	if isURL {
+		apiURL += "?search=" + url.QueryEscape(query)
+	} else {
+		apiURL += "?search=" + url.QueryEscape(query)
+	}
+
+	// Make HTTP request
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to ursh.dev: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		if resp.StatusCode == 404 {
+			return nil, nil // Not found is not an error
+		}
+		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
+	}
+
+	// Parse response
+	var result UrshieSearchResult
+	dec := json.NewDecoder(resp.Body)
+	if err := dec.Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %v", err)
+	}
+
+	if len(result.Data) == 0 {
+		return nil, nil
+	}
+
+	// Return the first match
+	return &result.Data[0], nil
+}
+
+// runUrshieWithPolicy downloads and runs an urshi with policy enforcement
+func runUrshieWithPolicy(urshie *Urshie, parsed parsedFlags) error {
+	// Download the script
+	scriptPath, err := resolveScript(urshie.ScriptURL, parsed.forceUpdate, parsed.dryRun)
+	if err != nil {
+		return fmt.Errorf("failed to download script: %v", err)
+	}
+
+	// Handle dry-run
+	if parsed.dryRun {
+		showDryRun(scriptPath, parsed.scriptArgs)
+		return nil
+	}
+
+	// Handle install mode
+	if parsed.installMode {
+		if err := installScript(scriptPath, urshie.ScriptURL, parsed.dryRun); err != nil {
+			return err
+		}
+		if !parsed.forceUpdate {
+			return nil
+		}
+	}
+
+	// Handle guard mode
+	if parsed.guardType != "" {
+		return runWithGuard(scriptPath, parsed.scriptArgs, parsed)
+	}
+
+	// Enforce policies before execution
+	if !parsed.noPolicyMode {
+		fmt.Fprintf(os.Stderr, "\n🔒 Running with policy enforcement...\n")
+		if err := enforcePolicies(scriptPath, urshie.ScriptURL); err != nil {
+			return err
+		}
+	}
+
+	// Execute the script
+	return execScript(scriptPath, parsed.scriptArgs)
+}
+
+// promptNotFoundActions prompts the user when an urshi is not found
+func promptNotFoundActions(name string, parsed parsedFlags) error {
+	fmt.Fprintf(os.Stderr, "\n📋 What would you like to do?\n")
+	fmt.Fprintf(os.Stderr, "   [1] Run locally using urchin tool (preview first)\n")
+	fmt.Fprintf(os.Stderr, "   [2] Run without any policy checks (trust me)\n")
+	fmt.Fprintf(os.Stderr, "   [3] Request ursh.dev to add it (async inference)\n")
+	fmt.Fprintf(os.Stderr, "   [q] Quit\n")
+	fmt.Fprintf(os.Stderr, "\n   Choice: ")
+
+	var response string
+	fmt.Scanln(&response)
+
+	switch response {
+	case "1":
+		// Run locally using urchin tool
+		return runWithUrchin(name, parsed)
+	case "2":
+		// Run without policy checks
+		fmt.Fprintf(os.Stderr, "\n⚠️  Running '%s' without policy enforcement...\n", name)
+		return runWithoutPolicy(name, parsed)
+	case "3":
+		// Request ursh.dev to add it
+		return requestUrshDevAdd(name)
+	case "q", "quit", "exit":
+		return exitError{msg: "Cancelled"}
+	default:
+		fmt.Fprintf(os.Stderr, "Invalid choice. Run 'ursh --help' for options.\n")
+		return exitError{msg: "invalid selection"}
+	}
+}
+
+// runWithUrchin runs the script locally using the urchin tool
+func runWithUrchin(name string, parsed parsedFlags) error {
+	fmt.Fprintf(os.Stderr, "\n🔧 Running with urchin tool (local inference)...\n")
+	fmt.Fprintf(os.Stderr, "   Note: This runs inference locally on your machine\n")
+	fmt.Fprintf(os.Stderr, "   The results will NOT be submitted to ursh.dev\n")
+
+	// Determine the script source
+	scriptURL := name
+	if !strings.HasPrefix(name, "http://") && !strings.HasPrefix(name, "https://") &&
+		!strings.HasPrefix(name, "gh:") {
+		// Treat as URL/stub
+		fmt.Fprintf(os.Stderr, "\n   Note: urchin tool requires a URL, not a name stub\n")
+		fmt.Fprintf(os.Stderr, "   Please provide: gh:user/repo/file or https://...\n")
+		return exitError{msg: "urchin tool requires a direct URL, not a name"}
+	}
+
+	// Try to run the urchin tool from next/review
+	urchinPath := filepath.Join("..", "..", "next", "review", "urchin.py")
+	if _, err := os.Stat(urchinPath); os.IsNotExist(err) {
+		urchinPath = "/home/chris/code/ursh/next/review/urchin.py"
+	}
+
+	if _, err := os.Stat(urchinPath); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "   Warning: urchin tool not found at %s\n", urchinPath)
+		fmt.Fprintf(os.Stderr, "   Please ensure the tool exists before using this option\n")
+		return exitError{msg: "urchin tool not found"}
+	}
+
+	fmt.Fprintf(os.Stderr, "   Using urchin from: %s\n", urchinPath)
+
+	// Run the script directly without policy (urchin handles its own analysis)
+	scriptPath, err := resolveScript(scriptURL, parsed.forceUpdate, parsed.dryRun)
+	if err != nil {
+		return err
+	}
+
+	if parsed.dryRun {
+		showDryRun(scriptPath, parsed.scriptArgs)
+		return nil
+	}
+
+	return execScript(scriptPath, parsed.scriptArgs)
+}
+
+// runWithoutPolicy runs the script without any policy checks
+func runWithoutPolicy(name string, parsed parsedFlags) error {
+	// Determine URL
+	scriptURL := name
+	if !strings.HasPrefix(name, "http://") && !strings.HasPrefix(name, "https://") &&
+		!strings.HasPrefix(name, "gh:") {
+		// Try to expand as GitHub short form
+		scriptURL = "gh:" + name
+	}
+
+	scriptPath, err := resolveScript(scriptURL, parsed.forceUpdate, parsed.dryRun)
+	if err != nil {
+		return err
+	}
+
+	if parsed.dryRun {
+		showDryRun(scriptPath, parsed.scriptArgs)
+		return nil
+	}
+
+	// Handle guard mode
+	if parsed.guardType != "" {
+		return runWithGuard(scriptPath, parsed.scriptArgs, parsed)
+	}
+
+	// Execute without policy
+	return execScript(scriptPath, parsed.scriptArgs)
+}
+
+// requestUrshDevAdd sends a request to ursh.dev to add the urshi
+func requestUrshDevAdd(name string) error {
+	fmt.Fprintf(os.Stderr, "\n📤 Submitting request to ursh.dev...\n")
+
+	// Determine if it's a URL or name
+	scriptURL := name
+	if !strings.HasPrefix(name, "http://") && !strings.HasPrefix(name, "https://") &&
+		!strings.HasPrefix(name, "gh:") {
+		scriptURL = "gh:" + name
+	}
+
+	// Build the submission request using proper JSON marshaling (avoids injection)
+	apiURL := URSH_API_URL + "/api/urshies/infer"
+
+	payloadMap := map[string]string{"url": scriptURL}
+	payloadBytes, err := json.Marshal(payloadMap)
+	if err != nil {
+		return fmt.Errorf("failed to create request payload: %v", err)
+	}
+	payloadReader := strings.NewReader(string(payloadBytes))
+
+	req, err := http.NewRequest("POST", apiURL, payloadReader)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to submit request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 201 {
+		fmt.Fprintf(os.Stderr, "✅ Request submitted successfully!\n")
+		fmt.Fprintf(os.Stderr, "\n   The ursh.dev team will review and add this urshi.\n")
+		fmt.Fprintf(os.Stderr, "   This may take some time as inference is expensive.\n")
+		fmt.Fprintf(os.Stderr, "\n   You can check status at: %s\n", URSH_API_URL)
+		return nil
+	}
+
+	if resp.StatusCode == 409 {
+		fmt.Fprintf(os.Stderr, "   This urshi may already exist.\n")
+		return exitError{msg: "urshi already exists in registry"}
+	}
+
+	fmt.Fprintf(os.Stderr, "   Request failed with status: %d\n", resp.StatusCode)
+	return exitError{msg: "failed to submit request to ursh.dev"}
 }
