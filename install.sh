@@ -81,13 +81,7 @@ detect_install_dir() {
         return
     fi
 
-    if [[ -d "$HOME/.local/bin" && -w "$HOME/.local/bin" ]]; then
-        INSTALL_DIR="$HOME/.local/bin"
-    elif [[ -d "/usr/local/bin" && -w "/usr/local/bin" ]]; then
-        INSTALL_DIR="/usr/local/bin"
-    else
-        INSTALL_DIR="$HOME/.local/bin"
-    fi
+    INSTALL_DIR="$(python3 -msite --user-base)/bin"
 }
 
 # ---------------------------------------------------------------------------
