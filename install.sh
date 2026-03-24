@@ -121,13 +121,10 @@ verify_checksum() {
     fi
 
     local actual
-    if command -v sha256sum &>/dev/null; then
-        actual="$(sha256sum "$archive" | awk '{print $1}')"
-    elif command -v shasum &>/dev/null; then
-        actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
+    if command -v md5sum &>/dev/null; then
+        actual="$(md5sum "$archive" | awk '{print $1}')"
     else
-        warn "sha256sum / shasum not found – skipping checksum verification"
-        return 0
+        actual="$(md5 -q "$archive")"
     fi
 
     if [[ "$actual" != "$expected" ]]; then
