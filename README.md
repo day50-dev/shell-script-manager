@@ -9,41 +9,11 @@ It caches scripts locally so you don't download them every time, supports GitHub
 
 ## Installation
 
-### Install (binary) — recommended
-
-Downloads a prebuilt binary for your platform (Linux amd64, macOS arm64/amd64):
-
 ```bash
 curl -sSL day50.dev/ursh | bash
 ```
 
-You can also set a custom install prefix:
-
-```bash
-PREFIX=/usr/local curl -sSL day50.dev/ursh | bash
-```
-
-### Install (Go)
-
-If you have Go 1.24+ installed:
-
-```bash
-go install github.com/day50-dev/ursh/go/cmd/ursh@latest
-```
-
-### Verify
-
-```bash
-ursh --version
-```
-
-### Supported platforms
-
-| OS    | Architecture |
-|-------|-------------|
-| Linux | amd64       |
-| macOS | arm64       |
-| macOS | amd64       |
+That's the last time you'll ever have to curl and bash.
 
 ## Quick Start
 
