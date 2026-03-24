@@ -35,6 +35,7 @@ var (
 	helpFlag     bool
 	clearCache   bool
 	policyMode   bool
+	currentManifest *UrshiManifest
 )
 
 func main() {
@@ -266,6 +267,45 @@ func cacheKey(url string) string {
 	return fmt.Sprintf("%x", hash)
 }
 
+// UrshiManifest represents a parsed .urshi.yaml manifest file
+type UrshiManifest struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	URL         string `yaml:"url"`
+	Homepage    string `yaml:"homepage"`
+	Readme      string `yaml:"readme"`
+	License     string `yaml:"license"`
+	Checksum    string `yaml:"checksum"`
+	Date        string `yaml:"date"`
+	Compliances []string `yaml:"compliances"`
+	Version     string `yaml:"version"`
+	Author      struct {
+		Name  string `yaml:"name"`
+		Email string `yaml:"email"`
+		URL   string `yaml:"url"`
+	} `yaml:"author"`
+	Tags       []string `yaml:"tags"`
+	Privileges struct {
+		Files   struct {
+			Read  []string `yaml:"read"`
+			Write []string `yaml:"write"`
+		} `yaml:"files"`
+		Network struct {
+			Get []string `yaml:"get"`
+			Put []string `yaml:"put"`
+		} `yaml:"network"`
+		Tools   []struct {
+			Name  string `yaml:"name"`
+			Scope string `yaml:"scope"`
+		} `yaml:"tools"`
+		Dynamic []struct {
+			What  string `yaml:"what"`
+			How   string `yaml:"how"`
+			Source string `yaml:"source"`
+		} `yaml:"dynamic"`
+	} `yaml:"privileges"`
+}
+
 func resolveScript(url string, forceUpdate, dryRun bool) (string, error) {
 	cacheDir := detectCacheDir()
 
@@ -278,6 +318,18 @@ func resolveScript(url string, forceUpdate, dryRun bool) (string, error) {
 		url = expanded
 	}
 
+	// Handle file:// URLs - convert to local path
+	if strings.HasPrefix(url, "file://") {
+		localPath := strings.TrimPrefix(url, "file://")
+		if _, err := os.Stat(localPath); err == nil {
+			if dryRun {
+				fmt.Fprintf(os.Stderr, "[dry-run] Using local file (from file://): %s\n", localPath)
+			}
+			return localPath, nil
+		}
+		return "", fmt.Errorf("file not found: %s", localPath)
+	}
+
 	// Check if local file
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		if _, err := os.Stat(url); err == nil {
@@ -286,6 +338,19 @@ func resolveScript(url string, forceUpdate, dryRun bool) (string, error) {
 				fmt.Fprintf(os.Stderr, "[dry-run] Using local file: %s\n", url)
 			}
 			return url, nil
+		}
+	}
+
+	// Check if it's a manifest file (no shebang = not a shell script = assume manifest)
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		if !hasShebang(url) {
+			manifest, scriptPath, err := loadUrshiManifest(url, dryRun)
+			if err != nil {
+				return "", err
+			}
+			// Store manifest in global for policy enforcement
+			currentManifest = manifest
+			return scriptPath, nil
 		}
 	}
 
@@ -736,6 +801,56 @@ func copyFile(src, dst string) error {
 
 	_, err = io.Copy(dstFile, srcFile)
 	return err
+}
+
+// hasShebang checks if a file starts with a shebang (#!) indicating it's a shell script
+func hasShebang(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false // Can't read = not a script, treat as manifest
+	}
+	lines := strings.SplitN(string(data), "\n", 2)
+	if len(lines) == 0 {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(lines[0]), "#!")
+}
+
+// loadUrshiManifest loads a .urshi.yaml manifest file and returns the manifest and script path
+func loadUrshiManifest(manifestPath string, dryRun bool) (*UrshiManifest, string, error) {
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read manifest: %w", err)
+	}
+
+	var manifest UrshiManifest
+	if err := yaml.Unmarshal(data, &manifest); err != nil {
+		return nil, "", fmt.Errorf("failed to parse manifest: %w", err)
+	}
+
+	if manifest.URL == "" {
+		return nil, "", fmt.Errorf("manifest has no 'url' field - cannot determine script to run")
+	}
+
+	if dryRun {
+		fmt.Fprintf(os.Stderr, "[dry-run] Loading urshi manifest: %s\n", manifestPath)
+		fmt.Fprintf(os.Stderr, "[dry-run]   Name: %s\n", manifest.Name)
+		fmt.Fprintf(os.Stderr, "[dry-run]   Description: %s\n", manifest.Description)
+		fmt.Fprintf(os.Stderr, "[dry-run]   Script URL: %s\n", manifest.URL)
+		fmt.Fprintf(os.Stderr, "[dry-run]   Privileges: files.read=%d, files.write=%d, network.get=%d, network.put=%d\n",
+			len(manifest.Privileges.Files.Read),
+			len(manifest.Privileges.Files.Write),
+			len(manifest.Privileges.Network.Get),
+			len(manifest.Privileges.Network.Put))
+	}
+
+	// Resolve the actual script URL from the manifest
+	scriptPath, err := resolveScript(manifest.URL, false, dryRun)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to resolve script from manifest: %w", err)
+	}
+
+	return &manifest, scriptPath, nil
 }
 
 // ==================== Policy System ====================
