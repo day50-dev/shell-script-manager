@@ -14,13 +14,13 @@ It caches scripts locally so you don't download them every time, supports GitHub
 Downloads a prebuilt binary for your platform (Linux amd64, macOS arm64/amd64):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/day50-dev/ursh/main/install.sh | bash
+curl -sSL day50.dev/ursh | bash
 ```
 
 You can also set a custom install prefix:
 
 ```bash
-PREFIX=/usr/local curl -fsSL https://raw.githubusercontent.com/day50-dev/ursh/main/install.sh | bash
+PREFIX=/usr/local curl -sSL day50.dev/ursh | bash
 ```
 
 ### Install (Go)
