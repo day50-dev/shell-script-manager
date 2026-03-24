@@ -1,0 +1,81 @@
+# =============================================================================
+# Example 4: AI-Powered Code Generator
+# =============================================================================
+# A urshi manifest for a script that uses generative AI to create code
+# =============================================================================
+
+name: ai-code-generator
+description: Generates boilerplate code using generative AI based on natural language descriptions
+url: https://github.com/ai-dev-tools/codegen/blob/main/scripts/ai-generate.sh
+homepage: https://ai-dev-tools.github.io/codegen
+readme: https://github.com/ai-dev-tools/codegen/blob/main/README.md
+license: MIT
+checksum: "sha256:d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7"
+date: "2024-01-25T16:20:00Z"
+compliances:
+  - GDPR
+  - SOC-2
+privileges:
+  files:
+    read:
+      - ~/.config/ai-dev-tools/config.json
+      - ./project-spec.md
+      - ./templates/*
+      - /tmp/ai-context-*
+    write:
+      - ./src/generated/*
+      - ./docs/generated/*
+      - /tmp/ai-prompt-*
+      - ~/.config/ai-dev-tools/cache/*
+  network:
+    get:
+      - https://api.openai.com/v1/models
+      - https://raw.githubusercontent.com/ai-dev-tools/templates/main/*
+      - https://cdn.ai-dev-tools.io/prompts/*
+    put:
+      - https://api.openai.com/v1/chat/completions
+      - https://api.anthropic.com/v1/messages
+      - https://telemetry.ai-dev-tools.io/usage?*
+  tools:
+    - name: curl
+      scope: restricted
+    - name: jq
+      scope: unrestricted
+    - name: mkdir
+      scope: ./src/generated
+    - name: cat
+      scope: unrestricted
+    - name: sed
+      scope: unrestricted
+  dynamic:
+    - what: AI prompt construction
+      how: Template engine with user input and project context
+      source: project-spec.md and templates
+    - what: Generated code content
+      how: Generative AI (LLM) - OpenAI GPT-4 or Anthropic Claude
+      source: https://api.openai.com/v1/chat/completions
+    - what: Output file paths
+      how: Computed from project structure and naming conventions
+    - what: API authentication tokens
+      how: Environment variable interpolation
+version: "1.5.0"
+author:
+  name: AI Dev Tools Community
+  email: community@ai-dev-tools.io
+  url: https://ai-dev-tools.github.io
+tags:
+  - ai
+  - code-generation
+  - llm
+  - productivity
+  - boilerplate
+dependencies:
+  - name: jq
+    version: ">=1.6"
+  - name: curl
+    version: ">=7.79.0"
+environment:
+  OPENAI_API_KEY: required
+  ANTHROPIC_API_KEY: optional
+  MODEL_PROVIDER: optional
+  TEMPERATURE: optional

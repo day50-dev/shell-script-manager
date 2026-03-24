@@ -1,0 +1,75 @@
+# =============================================================================
+# Example 2: Docker Development Environment Setup
+# =============================================================================
+# A urshi manifest for a script that sets up Docker containers for development
+# =============================================================================
+
+name: docker-dev-setup
+description: Sets up Docker containers for a complete development environment including database, cache, and application services
+url: https://github.com/microsoft/dev-tools/blob/main/scripts/docker-setup.sh
+homepage: https://github.com/microsoft/dev-tools
+readme: https://github.com/microsoft/dev-tools/blob/main/README.md
+license: Apache-2.0
+checksum: "sha256:b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5"
+date: "2024-01-20T14:45:00Z"
+compliances:
+  - SOC-2
+  - ISO-27001
+privileges:
+  files:
+    read:
+      - ~/.docker/config.json
+      - /etc/hosts
+      - ./docker-compose.yml
+      - ./.env.example
+    write:
+      - ~/.docker/config.json
+      - ./docker-compose.yml
+      - ./.env
+      - /tmp/docker-setup.log
+  network:
+    get:
+      - https://hub.docker.com/v2/*
+      - https://raw.githubusercontent.com/microsoft/dev-tools/main/templates/*
+      - https://cdn.example.com/docker-images/*
+    put:
+      - https://analytics.microsoft.com/track?*
+  tools:
+    - name: docker
+      scope: unrestricted
+    - name: docker-compose
+      scope: unrestricted
+    - name: curl
+      scope: restricted
+    - name: mkdir
+      scope: /tmp
+    - name: chmod
+      scope: ./
+    - name: git
+      scope: ~/projects
+  dynamic:
+    - what: Docker compose configuration
+      how: Template engine with environment variable interpolation
+      source: Environment variables and .env.example
+    - what: Container network addresses
+      how: Shell variable computation from docker network inspect
+version: "2.1.0"
+author:
+  name: Microsoft Dev Tools Team
+  email: devtools@microsoft.com
+  url: https://github.com/microsoft/dev-tools
+tags:
+  - docker
+  - development
+  - setup
+  - containers
+  - microsoft
+dependencies:
+  - name: docker
+    version: ">=20.10.0"
+  - name: docker-compose
+    version: ">=2.0.0"
+environment:
+  DOCKER_REGISTRY: required
+  PROJECT_NAME: required
+  DEBUG_MODE: optional
