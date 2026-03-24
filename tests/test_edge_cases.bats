@@ -1,9 +1,9 @@
 #!/usr/bin/env bats
 
-SHURL_BINARY="/home/chris/code/shurl/shurl"
+URSH_BINARY="${URSH:-$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)/ursh}"
 
 @test "URL with query parameters" {
-    run "$SHURL_BINARY" "https://example.com/script.sh?foo=bar" 2>&1
+    run "$URSH_BINARY" "https://example.com/script.sh?foo=bar" 2>&1
     [[ "$output" == *"error"* ]]
 }
 
@@ -15,7 +15,7 @@ echo "spaced"
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" "$temp_script" 2>&1
+    run "$URSH_BINARY" "$temp_script" 2>&1
     [[ "$output" == *"spaced"* ]]
 }
 
@@ -27,7 +27,7 @@ echo "Special: \$HOME & <test> | 'quotes'"
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" "$temp_script" 2>&1
+    run "$URSH_BINARY" "$temp_script" 2>&1
     [[ "$output" == *"Special:"* ]]
 }
 
@@ -39,7 +39,7 @@ printf "line1\nline2\nline3\n"
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" "$temp_script" 2>&1
+    run "$URSH_BINARY" "$temp_script" 2>&1
     [[ "$output" == *"line1"* ]]
     [[ "$output" == *"line2"* ]]
     [[ "$output" == *"line3"* ]]
@@ -53,7 +53,7 @@ for i in {1..100}; do echo "line $i"; done
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" "$temp_script" 2>&1
+    run "$URSH_BINARY" "$temp_script" 2>&1
     [[ "$output" == *"line 1"* ]]
     [[ "$output" == *"line 100"* ]]
 }
@@ -63,7 +63,7 @@ SCRIPT
     touch "$temp_script"
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" "$temp_script" 2>&1 || true
+    run "$URSH_BINARY" "$temp_script" 2>&1 || true
     [ "$status" -ne 0 ]
 }
 
@@ -75,7 +75,7 @@ exit 1
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" "$temp_script" 2>&1
+    run "$URSH_BINARY" "$temp_script" 2>&1
     [ "$status" -eq 1 ]
 }
 
@@ -87,7 +87,7 @@ exit 42
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" "$temp_script" 2>&1
+    run "$URSH_BINARY" "$temp_script" 2>&1
     [ "$status" -eq 42 ]
 }
 
@@ -99,7 +99,7 @@ echo "value: $TEST_VAR"
 SCRIPT
     chmod +x "$temp_script"
 
-    run bash -c "TEST_VAR=hello $SHURL_BINARY $temp_script" 2>&1
+    run bash -c "TEST_VAR=hello $URSH_BINARY $temp_script" 2>&1
     [[ "$output" == *"value: hello"* ]]
 }
 
@@ -108,7 +108,7 @@ SCRIPT
     printf '#!/bin/bash\necho "no newline"' > "$temp_script"
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" "$temp_script" 2>&1
+    run "$URSH_BINARY" "$temp_script" 2>&1
     [[ "$output" == *"no newline"* ]]
 }
 
@@ -117,7 +117,7 @@ SCRIPT
     printf '#!/bin/bash\n' > "$temp_script"
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" "$temp_script" 2>&1
+    run "$URSH_BINARY" "$temp_script" 2>&1
     [ "$status" -eq 0 ]
 }
 
@@ -126,6 +126,6 @@ SCRIPT
     printf '#!/bin/bash\necho "binary"' > "$temp_script"
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" "$temp_script" 2>&1
+    run "$URSH_BINARY" "$temp_script" 2>&1
     [[ "$output" == *"binary"* ]]
 }
