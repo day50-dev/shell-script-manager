@@ -1,0 +1,27 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy backend package files
+COPY backend/package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy backend source
+COPY backend/ ./
+
+# Copy database init script
+COPY database/ ./database/
+
+# Create data directory
+RUN mkdir -p /data
+
+# Initialize database
+RUN npm run init-db
+
+# Expose port
+EXPOSE 3001
+
+# Start server
+CMD ["node", "server.js"]
