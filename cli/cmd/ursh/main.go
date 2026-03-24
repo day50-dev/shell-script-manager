@@ -36,9 +36,20 @@ var (
 	clearCache   bool
 	policyMode   bool
 	currentManifest *UrshiManifest
+	logLevel     string
 )
 
+// logDebug prints debug messages when LOGLEVEL=debug
+func logDebug(msg string) {
+	if logLevel == "debug" {
+		fmt.Fprintf(os.Stderr, "[debug] %s\n", msg)
+	}
+}
+
 func main() {
+	// Check for debug logging
+	logLevel = os.Getenv("LOGLEVEL")
+
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "ursh: error: %v\n", err)
 		os.Exit(1)
@@ -125,7 +136,17 @@ func run(args []string) error {
 		return nil
 	}
 
-	// Execute script - policies only apply for ursh: registry lookups
+	// If we have a manifest (currentManifest set), enforce policies
+	if currentManifest != nil {
+		logDebug("Manifest detected, enforcing policies...")
+		
+		if err := enforcePolicies(scriptPath, parsed.url); err != nil {
+			return err
+		}
+	} else {
+		logDebug("No manifest, skipping policy enforcement")
+	}
+
 	return execScript(scriptPath, parsed.scriptArgs)
 }
 
@@ -293,16 +314,27 @@ type UrshiManifest struct {
 	Tags       []string `yaml:"tags"`
 	Privileges struct {
 		Files   struct {
-			Read  []string `yaml:"read"`
-			Write []string `yaml:"write"`
+			Read  []struct {
+				Path    string `yaml:"path"`
+				Line    int    `yaml:"line"`
+				Command string `yaml:"command"`
+			} `yaml:"read"`
+			Write []struct {
+				Path    string `yaml:"path"`
+				Line    int    `yaml:"line"`
+				Command string `yaml:"command"`
+			} `yaml:"write"`
 		} `yaml:"files"`
 		Network struct {
 			Get []string `yaml:"get"`
 			Put []string `yaml:"put"`
 		} `yaml:"network"`
 		Tools   []struct {
-			Name  string `yaml:"name"`
-			Scope string `yaml:"scope"`
+			Line        int    `yaml:"line"`
+			Command     string `yaml:"command"`
+			FullCommand string `yaml:"full_command"`
+			Resource    string `yaml:"resource"`
+			Type        string `yaml:"type"`
 		} `yaml:"tools"`
 		Dynamic []struct {
 			What  string `yaml:"what"`
@@ -336,21 +368,23 @@ func resolveScript(url string, forceUpdate, dryRun bool) (string, error) {
 		return "", fmt.Errorf("file not found: %s", localPath)
 	}
 
-	// Check if local file
+	// Check for process substitution / inline manifest FIRST - before local file check
+	// This must come first because os.Stat on /dev/fd/* succeeds but can't be executed
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
-		if _, err := os.Stat(url); err == nil {
-			// Local file
-			if dryRun {
-				fmt.Fprintf(os.Stderr, "[dry-run] Using local file: %s\n", url)
+		if isInlineManifest(url) {
+			manifest, scriptPath, err := loadUrshiManifest(url, dryRun)
+			if err != nil {
+				return "", err
 			}
-			return url, nil
+			currentManifest = manifest
+			return scriptPath, nil
 		}
 	}
 
 	// Check if it's a manifest file (no shebang = not a shell script = assume manifest)
-	// Also handle process substitution paths like /dev/fd/63
+	// This handles .yaml files and other non-shell files
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
-		if !hasShebang(url) || isInlineManifest(url) {
+		if !hasShebang(url) {
 			manifest, scriptPath, err := loadUrshiManifest(url, dryRun)
 			if err != nil {
 				return "", err
@@ -870,7 +904,7 @@ func handleStdin() error {
 	currentManifest = &manifest
 
 	// Show what we're doing
-	fmt.Fprintf(os.Stderr, "📥 Received manifest from stdin\n")
+	fmt.Fprintf(os.Stderr, "Received manifest from stdin\n")
 	fmt.Fprintf(os.Stderr, "   Name: %s\n", manifest.Name)
 	fmt.Fprintf(os.Stderr, "   Description: %s\n", manifest.Description)
 	fmt.Fprintf(os.Stderr, "   Script URL: %s\n", manifest.URL)
@@ -883,7 +917,7 @@ func handleStdin() error {
 
 	// If script path looks like a file descriptor (from process substitution),
 	// we need to copy it to a real file we can execute
-	if strings.HasPrefix(scriptPath, "/dev/fd/") {
+	if isInlineManifest(scriptPath) {
 		srcData, err := os.ReadFile(scriptPath)
 		if err != nil {
 			return fmt.Errorf("failed to read script from fd: %w", err)
@@ -898,15 +932,10 @@ func handleStdin() error {
 
 	fmt.Fprintf(os.Stderr, "   Script: %s\n", scriptPath)
 
-	// Enforce policies before execution
-	policyDir := detectPolicyDir()
-	if _, err := os.Stat(policyDir); err == nil {
-		fmt.Fprintf(os.Stderr, "\n🔒 Running with policy enforcement...\n")
-		if err := enforcePolicies(scriptPath, manifest.URL); err != nil {
-			return err
-		}
-	} else {
-		fmt.Fprintf(os.Stderr, "\n⚠️  No policies found at %s - running without policy enforcement\n", policyDir)
+	// Always enforce policies - if no policies exist, it will prompt for each action
+	
+	if err := enforcePolicies(scriptPath, manifest.URL); err != nil {
+		return err
 	}
 
 	// Execute the script
@@ -915,6 +944,20 @@ func handleStdin() error {
 
 // loadUrshiManifest loads a .urshi.yaml manifest file and returns the manifest and script path
 func loadUrshiManifest(manifestPath string, dryRun bool) (*UrshiManifest, string, error) {
+	// Handle process substitution - copy to temp file first
+	if isInlineManifest(manifestPath) {
+		data, err := os.ReadFile(manifestPath)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to read inline manifest: %w", err)
+		}
+		// Write to a temp file
+		tmpManifest := filepath.Join(os.TempDir(), fmt.Sprintf("ursh-manifest-%d.yaml", os.Getpid()))
+		if err := os.WriteFile(tmpManifest, data, 0644); err != nil {
+			return nil, "", fmt.Errorf("failed to write temp manifest: %w", err)
+		}
+		manifestPath = tmpManifest
+	}
+
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to read manifest: %w", err)
@@ -963,9 +1006,11 @@ const (
 
 // Action represents an action a script wants to perform
 type Action struct {
-	Type   string // "file", "network", "tool"
-	Target string // path or URL
-	Tool   string // tool name if type is "tool"
+	Type     string // "file", "network", "tool"
+	Target   string // path or URL
+	Tool     string // tool name if type is "tool"
+	Line     int    // line number in script
+	Command  string // the actual command
 }
 
 // Policy represents a security policy
@@ -1080,94 +1125,7 @@ func savePolicy(path string, policy Policy) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-// analyzeScript analyzes a script for potential actions
-func analyzeScript(scriptPath string) ([]Action, error) {
-	data, err := os.ReadFile(scriptPath)
-	if err != nil {
-		return nil, err
-	}
 
-	var actions []Action
-	content := string(data)
-
-	// Common file operations patterns
-	filePatterns := []string{
-		`cat\s+([/\w.-]+)`,
-		`head\s+([/\w.-]+)`,
-		`tail\s+([/\w.-]+)`,
-		`ls\s+([/\w.-]+)`,
-		`rm\s+([/\w.-]+)`,
-		`touch\s+([/\w.-]+)`,
-		`mkdir\s+([/\w.-]+)`,
-		`cp\s+([/\w.-]+)\s+([/\w.-]+)`,
-		`mv\s+([/\w.-]+)\s+([/\w.-]+)`,
-		`chmod\s+([/\w.-]+)`,
-		`chown\s+([/\w.-]+)`,
-		`readlink\s+([/\w.-]+)`,
-		`stat\s+([/\w.-]+)`,
-		`echo\s+[^>]*\s*>>\s*([/\w.-]+)`,
-	}
-
-	for _, pattern := range filePatterns {
-		r := regexp.MustCompile(pattern)
-		matches := r.FindAllStringSubmatch(content, -1)
-		for _, m := range matches {
-			if len(m) > 1 && m[1] != "" {
-				actions = append(actions, Action{
-					Type:   "file",
-					Target: m[1],
-				})
-			}
-		}
-	}
-
-	// Network patterns
-	networkPatterns := []string{
-		`curl\s+([^\s]+)`,
-		`wget\s+([^\s]+)`,
-		`fetch\s+([^\s]+)`,
-		`nc\s+([^\s]+)`,
-		`telnet\s+([^\s]+)`,
-	}
-
-	for _, pattern := range networkPatterns {
-		r := regexp.MustCompile(pattern)
-		matches := r.FindAllStringSubmatch(content, -1)
-		for _, m := range matches {
-			if len(m) > 1 && m[1] != "" {
-				actions = append(actions, Action{
-					Type:   "network",
-					Target: m[1],
-				})
-			}
-		}
-	}
-
-	// Tool usage patterns (like npm, pip, docker, etc.)
-	toolPatterns := []string{
-		`(npm|pnpm|yarn)\s+(install|run)`,
-		`(pip|pip3)\s+(install|download)`,
-		`(apt|apt-get|yum|dnf)\s+(install|update)`,
-		`(docker|podman)\s+(run|build|pull)`,
-		`(git)\s+(clone|push|pull|commit)`,
-	}
-
-	for _, pattern := range toolPatterns {
-		r := regexp.MustCompile(pattern)
-		matches := r.FindAllStringSubmatch(content, -1)
-		for _, m := range matches {
-			if len(m) > 1 {
-				actions = append(actions, Action{
-					Type:   "tool",
-					Target: m[1],
-					Tool:   m[1],
-				})
-			}
-		}
-	}
-
-	return actions, nil
-}
 
 // evaluateAction evaluates an action against a single policy
 func evaluateAction(policy Policy, action Action) Decision {
@@ -1265,69 +1223,14 @@ func matchGlob(target, pattern string) bool {
 	return matched
 }
 
-// promptUser asks the user what to do with an action
-func promptUser(action Action) (Decision, bool) {
-	fmt.Fprintf(os.Stderr, "\n⚠️  Policy Check: Script wants to %s: %s\n", action.Type, action.Target)
-	fmt.Fprintf(os.Stderr, "  [A]low  [D]eny  [a]sk always  [N]ever ask for this type  [V]iew policy  [E]dit and save new policy\n")
-	fmt.Fprintf(os.Stderr, "  Choice: ")
+// color returns ANSI color codes
+func color(code string, text string) string {
+	return "\033[" + code + "m" + text + "\033[0m"
+}
 
-	var response string
-	fmt.Scanln(&response)
-
-	switch strings.ToLower(response) {
-	case "a", "allow":
-		return Allow, false
-	case "d", "deny":
-		return Deny, false
-	case "ask":
-		return Ask, false
-	case "n", "never":
-		// Would add to policy exclusions
-		return Deny, true
-	case "v", "view":
-		// Show the script for context
-		fmt.Fprintf(os.Stderr, "\n  (Policy viewing not implemented - showing script context)\n")
-		return Ask, false
-	case "e", "edit":
-		// Open $EDITOR to let user edit the policy
-		editor := os.Getenv("EDITOR")
-		if editor == "" {
-			editor = "vi"
-		}
-		// Create a temporary policy file for editing
-		tmpFile := filepath.Join(os.TempDir(), "ursh-policy-edit.yaml")
-		defaultPolicy := Policy{
-			Name: "new-script-policy",
-			Privileges: PrivilegeConfig{
-				Files: FilePrivilege{Inclusions: []string{action.Target}},
-			},
-		}
-		data, _ := yaml.Marshal(defaultPolicy)
-		os.WriteFile(tmpFile, data, 0645)
-
-		cmd := exec.Command(editor, tmpFile)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Run()
-
-		// Read back the edited policy
-		if editedData, err := os.ReadFile(tmpFile); err == nil {
-			var editedPolicy Policy
-			if yaml.Unmarshal(editedData, &editedPolicy) == nil {
-				// Save to policy directory
-				policyDir := detectPolicyDir()
-				os.MkdirAll(policyDir, 0755)
-				savePolicy(filepath.Join(policyDir, "99-new-policy.yaml"), editedPolicy)
-				fmt.Fprintf(os.Stderr, "  ✓ Policy saved\n")
-			}
-		}
-		os.Remove(tmpFile)
-		return Ask, false
-	default:
-		fmt.Fprintf(os.Stderr, "  Invalid choice, defaulting to Ask\n")
-		return Ask, false
-	}
+// promptUser asks the user what to do with an action using a modern TUI
+func promptUser(action Action, manifest *UrshiManifest, scriptPath string) (Decision, bool) {
+	return promptUserTUI(action, manifest, scriptPath)
 }
 
 // createNewPolicy creates a new policy based on user decisions
@@ -1398,7 +1301,7 @@ func createNewPolicy(scriptName string, actions []Action, decisions map[string]D
 	return savePolicy(policyPath, policy)
 }
 
-// enforcePolicies analyzes script and enforces policy checks before execution
+// enforcePolicies checks the manifest's declared privileges against policies
 func enforcePolicies(scriptPath, url string) error {
 	// Load existing policies
 	policyDir := detectPolicyDir()
@@ -1407,62 +1310,122 @@ func enforcePolicies(scriptPath, url string) error {
 		return fmt.Errorf("failed to load policies: %v", err)
 	}
 
-	// Analyze script for actions
-	actions, err := analyzeScript(scriptPath)
-	if err != nil {
-		return fmt.Errorf("failed to analyze script: %v", err)
+	// Get script name for policy matching (used for logging if needed)
+	_ = extractScriptName(url)
+
+	// Use the manifest's declared privileges (from urchin) instead of re-analyzing
+	manifest := currentManifest
+	if manifest == nil {
+		// No manifest - nothing to check
+		return nil
 	}
 
-	if len(actions) == 0 {
-		return nil // No actions to check
-	}
-
-	// Get script name for policy
-	scriptName := extractScriptName(url)
-
-	// Track decisions for new policy creation
-	decisions := make(map[string]Decision)
-	askForNewPolicy := false
-
-	fmt.Fprintf(os.Stderr, "\n🔍 Analyzing script: %s\n", scriptName)
-	fmt.Fprintf(os.Stderr, "   Found %d action(s) to review\n", len(actions))
-
-	// Evaluate each action
-	for _, action := range actions {
+	// Check file access privileges from the manifest
+	for _, fileRead := range manifest.Privileges.Files.Read {
+		action := Action{Type: "file", Target: fileRead.Path, Line: fileRead.Line, Command: fileRead.Command}
 		decision, matchedPolicy := evaluateActionWithFallback(action, policies)
 
 		if matchedPolicy != nil {
-			fmt.Fprintf(os.Stderr, "  ✓ %s %s - matched policy '%s' → %s\n",
-				action.Type, action.Target, matchedPolicy.Name, decisionToString(decision))
-			decisions[action.Type+":"+action.Target] = decision
+			fmt.Fprintf(os.Stderr, "  ✓ file read %s - matched policy '%s' → %s\n",
+				fileRead.Path, matchedPolicy.Name, decisionToString(decision))
 			continue
 		}
 
 		// No matching policy - ask user
-		fmt.Fprintf(os.Stderr, "\n⚠️  Unknown %s: %s\n", action.Type, action.Target)
-		decision, createPolicy := promptUser(action)
-		decisions[action.Type+":"+action.Target] = decision
-
-		if createPolicy {
-			askForNewPolicy = true
-		}
+		decision, _ = promptUser(action, manifest, scriptPath)
 
 		if decision == Deny {
-			return fmt.Errorf("denied by policy: %s %s", action.Type, action.Target)
+			return fmt.Errorf("denied by policy: file read %s", fileRead.Path)
 		}
 	}
 
-	// Offer to save new policy if user made decisions
-	if askForNewPolicy {
-		fmt.Fprintf(os.Stderr, "\n💾 Save these decisions as a new policy? [y/N]: ")
-		var response string
-		fmt.Scanln(&response)
-		if strings.ToLower(response) == "y" {
-			if err := createNewPolicy(scriptName, actions, decisions); err != nil {
-				fmt.Fprintf(os.Stderr, "  Warning: failed to save policy: %v\n", err)
-			} else {
-				fmt.Fprintf(os.Stderr, "  ✓ Policy saved to %s\n", policyDir)
-			}
+	// Check file write privileges
+	for _, fileWrite := range manifest.Privileges.Files.Write {
+		action := Action{Type: "file", Target: fileWrite.Path, Line: fileWrite.Line, Command: fileWrite.Command}
+		decision, matchedPolicy := evaluateActionWithFallback(action, policies)
+
+		if matchedPolicy != nil {
+			fmt.Fprintf(os.Stderr, "  ✓ file write %s - matched policy '%s' → %s\n",
+				fileWrite.Path, matchedPolicy.Name, decisionToString(decision))
+			continue
+		}
+
+		decision, _ = promptUser(action, manifest, scriptPath)
+
+		if decision == Deny {
+			return fmt.Errorf("denied by policy: file write %s", fileWrite.Path)
+		}
+	}
+
+	// Check network GET privileges from the manifest
+	for _, netGet := range manifest.Privileges.Network.Get {
+		action := Action{Type: "network", Target: netGet}
+		decision, matchedPolicy := evaluateActionWithFallback(action, policies)
+
+		if matchedPolicy != nil {
+			fmt.Fprintf(os.Stderr, "  ✓ network GET %s - matched policy '%s' → %s\n",
+				netGet, matchedPolicy.Name, decisionToString(decision))
+			continue
+		}
+
+		decision, _ = promptUser(action, manifest, scriptPath)
+
+		if decision == Deny {
+			return fmt.Errorf("denied by policy: network GET %s", netGet)
+		}
+	}
+
+	// Check network PUT privileges from the manifest
+	for _, netPut := range manifest.Privileges.Network.Put {
+		action := Action{Type: "network", Target: netPut}
+		decision, matchedPolicy := evaluateActionWithFallback(action, policies)
+
+		if matchedPolicy != nil {
+			fmt.Fprintf(os.Stderr, "  ✓ network PUT %s - matched policy '%s' → %s\n",
+				netPut, matchedPolicy.Name, decisionToString(decision))
+			continue
+		}
+
+		decision, _ = promptUser(action, manifest, scriptPath)
+
+		if decision == Deny {
+			return fmt.Errorf("denied by policy: network PUT %s", netPut)
+		}
+	}
+
+	// Check tool usage from the manifest
+	for _, tool := range manifest.Privileges.Tools {
+		action := Action{Type: "tool", Target: tool.Command, Tool: tool.Command, Line: tool.Line}
+		decision, matchedPolicy := evaluateActionWithFallback(action, policies)
+
+		if matchedPolicy != nil {
+			fmt.Fprintf(os.Stderr, "  ✓ tool %s - matched policy '%s' → %s\n",
+				tool.Command, matchedPolicy.Name, decisionToString(decision))
+			continue
+		}
+
+		decision, _ = promptUser(action, manifest, scriptPath)
+
+		if decision == Deny {
+			return fmt.Errorf("denied by policy: tool %s", tool.Command)
+		}
+	}
+
+	// Check dynamic/other privileges from the manifest
+	for _, dyn := range manifest.Privileges.Dynamic {
+		action := Action{Type: "dynamic", Target: dyn.What}
+		decision, matchedPolicy := evaluateActionWithFallback(action, policies)
+
+		if matchedPolicy != nil {
+			fmt.Fprintf(os.Stderr, "  ✓ dynamic %s - matched policy '%s' → %s\n",
+				dyn.What, matchedPolicy.Name, decisionToString(decision))
+			continue
+		}
+
+		decision, _ = promptUser(action, manifest, scriptPath)
+
+		if decision == Deny {
+			return fmt.Errorf("denied by policy: dynamic %s", dyn.What)
 		}
 	}
 
@@ -1614,7 +1577,7 @@ func runUrshieWithPolicy(urshie *Urshie, parsed parsedFlags) error {
 
 	// Enforce policies before execution
 	if !parsed.noPolicyMode {
-		fmt.Fprintf(os.Stderr, "\n🔒 Running with policy enforcement...\n")
+		
 		if err := enforcePolicies(scriptPath, urshie.ScriptURL); err != nil {
 			return err
 		}
@@ -1642,7 +1605,7 @@ func promptNotFoundActions(name string, parsed parsedFlags) error {
 		return runWithUrchin(name, parsed)
 	case "2":
 		// Run without policy checks
-		fmt.Fprintf(os.Stderr, "\n⚠️  Running '%s' without policy enforcement...\n", name)
+		fmt.Fprintf(os.Stderr, "\nRunning '%s' without policy enforcement...\n", name)
 		return runWithoutPolicy(name, parsed)
 	case "3":
 		// Request ursh.dev to add it

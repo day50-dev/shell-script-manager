@@ -120,43 +120,7 @@ func TestPolicyMatching(t *testing.T) {
 	}
 }
 
-// TestScriptAnalysis tests that scripts are analyzed for actions
-func TestScriptAnalysis(t *testing.T) {
-	// Create a test script that accesses files and network
-	tmpDir := t.TempDir()
-	scriptPath := filepath.Join(tmpDir, "test.sh")
-	scriptContent := `#!/bin/sh
-cat /etc/passwd
-curl https://example.com/api
-mkdir -p /tmp/testdir
-ls /home/user/.ssh
-`
-	os.WriteFile(scriptPath, []byte(scriptContent), 0755)
 
-	actions, err := analyzeScript(scriptPath)
-	if err != nil {
-		t.Fatalf("Failed to analyze script: %v", err)
-	}
-
-	// Should detect file access and network calls
-	hasFileAccess := false
-	hasNetworkAccess := false
-	for _, a := range actions {
-		if a.Type == "file" {
-			hasFileAccess = true
-		}
-		if a.Type == "network" {
-			hasNetworkAccess = true
-		}
-	}
-
-	if !hasFileAccess {
-		t.Error("Expected to detect file access actions")
-	}
-	if !hasNetworkAccess {
-		t.Error("Expected to detect network access actions")
-	}
-}
 
 // TestDefaultAskBehavior tests that unknown actions default to Ask
 func TestDefaultAskBehavior(t *testing.T) {
