@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 )
 
@@ -80,6 +81,13 @@ func run(args []string) error {
 	parsed, err := parseFlags(args)
 	if err != nil {
 		return exitError{msg: err.Error()}
+	}
+
+	// Handle explicit stdin marker "-"
+	for _, arg := range args {
+		if arg == "-" {
+			return handleStdin()
+		}
 	}
 
 	// Handle early-exit flags
@@ -243,6 +251,10 @@ func parseFlags(args []string) (parsedFlags, error) {
 			}
 			p.dockerImage = args[i+1]
 			i++
+		case "-":
+			// Explicit stdin marker - skip it, stdin will be handled
+			i++
+			continue
 		default:
 			if strings.HasPrefix(arg, "-") {
 				return p, fmt.Errorf("Unknown option: %s\n\nSee 'ursh --help' for usage.", arg)
@@ -865,12 +877,9 @@ func isInlineManifest(path string) bool {
 
 // handleStdin handles reading a manifest from stdin (e.g., urchin output piped to ursh)
 func handleStdin() error {
-	// Check if stdin is a pipe or was redirected
-	stat, _ := os.Stdin.Stat()
-	isPipe := (stat.Mode() & os.ModeNamedPipe) != 0
-	
-	// If no pipe and no "-" argument, show usage
-	if !isPipe && len(os.Args) > 1 && os.Args[1] != "-" {
+	// Check if stdin is a pipe or redirect (not a terminal)
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		// Stdin is a terminal - no pipe/redirect, show usage
 		return exitError{msg: "No URL provided.\n\nUsage: ursh [OPTIONS] <url> [args...]\n       cat manifest.yaml | ursh -\n       urchin script.sh | ursh -\nSee 'ursh --help' for more information."}
 	}
 
