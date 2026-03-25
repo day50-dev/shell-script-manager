@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -38,18 +39,39 @@ var (
 	policyMode   bool
 	currentManifest *UrshiManifest
 	logLevel     string
+	logger       *slog.Logger
 )
 
-// logDebug prints debug messages when LOGLEVEL=debug
-func logDebug(msg string) {
+// initLogger sets up the slog logger based on LOGLEVEL env var
+func initLogger() {
+	level := slog.LevelInfo
 	if logLevel == "debug" {
-		fmt.Fprintf(os.Stderr, "[debug] %s\n", msg)
+		level = slog.LevelDebug
 	}
+	
+	opts := &slog.HandlerOptions{
+		Level: level,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			// Remove time attribute for cleaner output
+			if a.Key == slog.TimeKey {
+				return slog.Attr{}
+			}
+			return a
+		},
+	}
+	
+	handler := slog.NewTextHandler(os.Stderr, opts)
+	logger = slog.New(handler)
+}
+
+func logDebug(msg string) {
+	logger.Debug(msg)
 }
 
 func main() {
 	// Check for debug logging
 	logLevel = os.Getenv("LOGLEVEL")
+	initLogger()
 
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "ursh: error: %v\n", err)
@@ -146,7 +168,7 @@ func run(args []string) error {
 
 	// If we have a manifest (currentManifest set), enforce policies
 	if currentManifest != nil {
-		logDebug("Manifest detected, enforcing policies...")
+		logDebug("Manifest detected, enforcing policies")
 		
 		if err := enforcePolicies(scriptPath, parsed.url); err != nil {
 			return err
@@ -424,9 +446,8 @@ func resolveScript(url string, forceUpdate, dryRun bool) (string, error) {
 		if dryRun {
 			fmt.Fprintf(os.Stderr, "[dry-run] Would download: %s\n", url)
 			fmt.Fprintf(os.Stderr, "[dry-run] Would save to: %s\n", cachedFile)
-		} else if !quietMode {
-			fmt.Fprintf(os.Stderr, "Downloading: %s\n", url)
 		}
+		logDebug(fmt.Sprintf("Downloading: %s", url))
 
 		if err := download(url, cachedFile); err != nil {
 			return "", fmt.Errorf("Failed to download from '%s': %v", url, err)
@@ -442,36 +463,26 @@ func expandGitHubShorthand(shorthand string) (string, error) {
 	// Remove gh: prefix
 	path := strings.TrimPrefix(shorthand, "gh:")
 
-	// Parse user/repo@branch/file
-	re := regexp.MustCompile(`^([^/]+)/([^@]+)(@([^/]+))?/(.+)$`)
-	matches := re.FindStringSubmatch(path)
-
-	if matches != nil {
-		user := matches[1]
-		repo := matches[2]
-		branch := "main"
-		if matches[4] != "" {
-			branch = matches[4]
-		}
-		file := matches[5]
-		return fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", user, repo, branch, file), nil
+	// Split on '/' - first two parts are user/repo, rest is file path
+	parts := strings.SplitN(path, "/", 3)
+	if len(parts) < 3 {
+		return "", fmt.Errorf("Invalid GitHub shorthand: '%s'\n\nFormat should be: gh:user/repo/file", shorthand)
 	}
 
-	// Try user/repo format (no file)
-	re2 := regexp.MustCompile(`^([^/]+)/([^@]+)(@([^/]+))?$`)
-	matches2 := re2.FindStringSubmatch(path)
+	user := parts[0]
+	repoWithBranch := parts[1]
+	file := parts[2]
 
-	if matches2 != nil {
-		user := matches2[1]
-		repo := matches2[2]
-		branch := "main"
-		if matches2[4] != "" {
-			branch = matches2[4]
-		}
-		return fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", user, repo, branch, repo), nil
+	// Check for @branch in repo part
+	branch := "main"
+	if idx := strings.Index(repoWithBranch, "@"); idx != -1 {
+		repoWithBranch = repoWithBranch[:idx]
+		branch = parts[1][idx+1:]
 	}
 
-	return "", fmt.Errorf("Invalid GitHub shorthand: '%s'\n\nFormat should be: gh:user/repo/file\nOr with branch: gh:user/repo@branch/file\nOr just repo: gh:user/repo (expands to gh:user/repo/repo)", shorthand)
+	repo := repoWithBranch
+
+	return fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", user, repo, branch, file), nil
 }
 
 func download(url, dest string) error {
@@ -574,7 +585,7 @@ func installScript(scriptPath, url string, isDryRun bool) error {
 	}
 	os.Chmod(installPath, 0755)
 
-	fmt.Fprintf(os.Stderr, "%s is now available in %s\n", scriptName, installDir)
+	logDebug(fmt.Sprintf("%s installed to %s", scriptName, installDir))
 
 	// Update install list
 	cacheDir := detectCacheDir()
@@ -679,7 +690,7 @@ func showGuardDryRun(scriptPath string, args []string, p parsedFlags) error {
 }
 
 func runDocker(scriptPath string, args []string, p parsedFlags) error {
-	fmt.Fprintf(os.Stderr, "Running script in docker: %s\n", p.dockerImage)
+	logDebug(fmt.Sprintf("Running script in docker: %s", p.dockerImage))
 
 	// Check docker available
 	if _, err := exec.LookPath("docker"); err != nil {
@@ -708,7 +719,7 @@ func runDocker(scriptPath string, args []string, p parsedFlags) error {
 }
 
 func runChroot(scriptPath string, args []string, p parsedFlags) error {
-	fmt.Fprintf(os.Stderr, "Running script in chroot: %s\n", p.chrootRoot)
+	logDebug(fmt.Sprintf("Running script in chroot: %s", p.chrootRoot))
 
 	// Check chroot available
 	if _, err := exec.LookPath("chroot"); err != nil {
@@ -911,12 +922,6 @@ func handleStdin() error {
 
 	// Store manifest for policy enforcement
 	currentManifest = &manifest
-
-	// Show what we're doing
-	fmt.Fprintf(os.Stderr, "Received manifest from stdin\n")
-	fmt.Fprintf(os.Stderr, "   Name: %s\n", manifest.Name)
-	fmt.Fprintf(os.Stderr, "   Description: %s\n", manifest.Description)
-	fmt.Fprintf(os.Stderr, "   Script URL: %s\n", manifest.URL)
 
 	// Resolve the script URL (download/copy to cache)
 	scriptPath, err := resolveScript(manifest.URL, false, false)
@@ -1481,7 +1486,7 @@ func handleUrshRegistry(parsed parsedFlags) error {
 		return fmt.Errorf("Invalid ursh: format. Use: ursh:<name> or ursh:<url>\n\nExample: ursh:free-ollama")
 	}
 
-	fmt.Fprintf(os.Stderr, "🔍 Looking up '%s' in ursh registry...\n", name)
+	logDebug(fmt.Sprintf("Looking up '%s' in ursh registry...", name))
 
 	// Determine search query - self-detect if it looks like a URL
 	searchQuery := name
@@ -1489,30 +1494,30 @@ func handleUrshRegistry(parsed parsedFlags) error {
 		strings.HasPrefix(name, "gh:") || strings.HasPrefix(name, "github.com")
 
 	if isURL {
-		fmt.Fprintf(os.Stderr, "   Detected URL format, searching by URL...\n")
+		logDebug("Detected URL format, searching by URL...")
 	} else {
-		fmt.Fprintf(os.Stderr, "   Detected name format, searching by name...\n")
+		logDebug("Detected name format, searching by name...")
 	}
 
 	// Search the ursh.dev API
 	urshie, err := searchUrshie(searchQuery, isURL)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "   Search failed: %v\n", err)
+		logDebug(fmt.Sprintf("Search failed: %v", err))
 	}
 
 	if urshie != nil {
 		// Found in registry - download and run with policy enforcement
-		fmt.Fprintf(os.Stderr, "✅ Found: %s\n", urshie.Name)
+		logDebug(fmt.Sprintf("Found: %s", urshie.Name))
 		if urshie.Description != "" {
-			fmt.Fprintf(os.Stderr, "   Description: %s\n", urshie.Description)
+			logDebug(fmt.Sprintf("Description: %s", urshie.Description))
 		}
-		fmt.Fprintf(os.Stderr, "   Script: %s\n", urshie.ScriptURL)
+		logDebug(fmt.Sprintf("Script: %s", urshie.ScriptURL))
 
 		return runUrshieWithPolicy(urshie, parsed)
 	}
 
 	// Not found - offer 3 options
-	fmt.Fprintf(os.Stderr, "\n❌ '%s' not found in ursh registry\n", name)
+	logDebug(fmt.Sprintf("'%s' not found in ursh registry", name))
 	return promptNotFoundActions(name, parsed)
 }
 
@@ -1614,7 +1619,7 @@ func promptNotFoundActions(name string, parsed parsedFlags) error {
 		return runWithUrchin(name, parsed)
 	case "2":
 		// Run without policy checks
-		fmt.Fprintf(os.Stderr, "\nRunning '%s' without policy enforcement...\n", name)
+		logDebug(fmt.Sprintf("Running '%s' without policy enforcement...", name))
 		return runWithoutPolicy(name, parsed)
 	case "3":
 		// Request ursh.dev to add it
@@ -1629,17 +1634,15 @@ func promptNotFoundActions(name string, parsed parsedFlags) error {
 
 // runWithUrchin runs the script locally using the urchin tool
 func runWithUrchin(name string, parsed parsedFlags) error {
-	fmt.Fprintf(os.Stderr, "\n🔧 Running with urchin tool (local inference)...\n")
-	fmt.Fprintf(os.Stderr, "   Note: This runs inference locally on your machine\n")
-	fmt.Fprintf(os.Stderr, "   The results will NOT be submitted to ursh.dev\n")
+	logDebug("Running with urchin tool (local inference)")
+	logDebug("Note: This runs inference locally on your machine")
+	logDebug("The results will NOT be submitted to ursh.dev")
 
 	// Determine the script source
 	scriptURL := name
 	if !strings.HasPrefix(name, "http://") && !strings.HasPrefix(name, "https://") &&
 		!strings.HasPrefix(name, "gh:") {
 		// Treat as URL/stub
-		fmt.Fprintf(os.Stderr, "\n   Note: urchin tool requires a URL, not a name stub\n")
-		fmt.Fprintf(os.Stderr, "   Please provide: gh:user/repo/file or https://...\n")
 		return exitError{msg: "urchin tool requires a direct URL, not a name"}
 	}
 
@@ -1650,12 +1653,11 @@ func runWithUrchin(name string, parsed parsedFlags) error {
 	}
 
 	if _, err := os.Stat(urchinPath); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "   Warning: urchin tool not found at %s\n", urchinPath)
-		fmt.Fprintf(os.Stderr, "   Please ensure the tool exists before using this option\n")
+		logDebug(fmt.Sprintf("urchin tool not found at %s", urchinPath))
 		return exitError{msg: "urchin tool not found"}
 	}
 
-	fmt.Fprintf(os.Stderr, "   Using urchin from: %s\n", urchinPath)
+	logDebug(fmt.Sprintf("Using urchin from: %s", urchinPath))
 
 	// Run the script directly without policy (urchin handles its own analysis)
 	scriptPath, err := resolveScript(scriptURL, parsed.forceUpdate, parsed.dryRun)
@@ -1702,7 +1704,7 @@ func runWithoutPolicy(name string, parsed parsedFlags) error {
 
 // requestUrshDevAdd sends a request to ursh.dev to add the urshi
 func requestUrshDevAdd(name string) error {
-	fmt.Fprintf(os.Stderr, "\n📤 Submitting request to ursh.dev...\n")
+	logDebug("Submitting request to ursh.dev...")
 
 	// Determine if it's a URL or name
 	scriptURL := name
@@ -1735,18 +1737,18 @@ func requestUrshDevAdd(name string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 201 {
-		fmt.Fprintf(os.Stderr, "✅ Request submitted successfully!\n")
-		fmt.Fprintf(os.Stderr, "\n   The ursh.dev team will review and add this urshi.\n")
-		fmt.Fprintf(os.Stderr, "   This may take some time as inference is expensive.\n")
-		fmt.Fprintf(os.Stderr, "\n   You can check status at: %s\n", URSH_API_URL)
+		logDebug("Request submitted successfully")
+		logDebug("The ursh.dev team will review and add this urshi")
+		logDebug("This may take some time as inference is expensive")
+		logDebug(fmt.Sprintf("Check status at: %s", URSH_API_URL))
 		return nil
 	}
 
 	if resp.StatusCode == 409 {
-		fmt.Fprintf(os.Stderr, "   This urshi may already exist.\n")
+		logDebug("urshi may already exist")
 		return exitError{msg: "urshi already exists in registry"}
 	}
 
-	fmt.Fprintf(os.Stderr, "   Request failed with status: %d\n", resp.StatusCode)
+	logDebug(fmt.Sprintf("Request failed with status: %d", resp.StatusCode))
 	return exitError{msg: "failed to submit request to ursh.dev"}
 }
