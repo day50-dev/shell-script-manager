@@ -134,6 +134,9 @@ func run(args []string) error {
 		return exitError{msg: "No URL provided.\n\nUsage: ursh [OPTIONS] <url> [args...]\nSee 'ursh --help' for more information."}
 	}
 
+	// Normalize URL - add local: protocol prefix for local paths
+	parsed.url = normalizeURL(parsed.url)
+
 	// Check if this is an ursh: registry lookup
 	if strings.HasPrefix(parsed.url, "ursh:") {
 		return handleUrshRegistry(parsed)
@@ -378,6 +381,34 @@ type UrshiManifest struct {
 	} `yaml:"privileges"`
 }
 
+func normalizeURL(url string) string {
+	// If it already has a protocol, leave it alone
+	if strings.HasPrefix(url, "http://") ||
+		strings.HasPrefix(url, "https://") ||
+		strings.HasPrefix(url, "file://") ||
+		strings.HasPrefix(url, "gh:") ||
+		strings.HasPrefix(url, "ursh:") ||
+		strings.HasPrefix(url, "local:") {
+		return url
+	}
+
+	// Check if it looks like a local path (starts with / or . or ~)
+	if strings.HasPrefix(url, "/") ||
+		strings.HasPrefix(url, "./") ||
+		strings.HasPrefix(url, "../") ||
+		strings.HasPrefix(url, "~") {
+		return "local:" + url
+	}
+
+	// Check if it's a file that exists in the current directory
+	if _, err := os.Stat(url); err == nil {
+		return "local:" + url
+	}
+
+	// Otherwise treat as a URL/registry lookup
+	return url
+}
+
 func resolveScript(url string, forceUpdate, dryRun bool) (string, error) {
 	cacheDir := detectCacheDir()
 
@@ -390,12 +421,13 @@ func resolveScript(url string, forceUpdate, dryRun bool) (string, error) {
 		url = expanded
 	}
 
-	// Handle file:// URLs - convert to local path
-	if strings.HasPrefix(url, "file://") {
+	// Handle file:// and local: URLs - convert to local path
+	if strings.HasPrefix(url, "file://") || strings.HasPrefix(url, "local:") {
 		localPath := strings.TrimPrefix(url, "file://")
+		localPath = strings.TrimPrefix(localPath, "local:")
 		if _, err := os.Stat(localPath); err == nil {
 			if dryRun {
-				fmt.Fprintf(os.Stderr, "[dry-run] Using local file (from file://): %s\n", localPath)
+				fmt.Fprintf(os.Stderr, "[dry-run] Using local file: %s\n", localPath)
 			}
 			return localPath, nil
 		}
@@ -465,13 +497,12 @@ func expandGitHubShorthand(shorthand string) (string, error) {
 
 	// Split on '/' - first two parts are user/repo, rest is file path
 	parts := strings.SplitN(path, "/", 3)
-	if len(parts) < 3 {
+	if len(parts) < 2 {
 		return "", fmt.Errorf("Invalid GitHub shorthand: '%s'\n\nFormat should be: gh:user/repo/file", shorthand)
 	}
 
 	user := parts[0]
 	repoWithBranch := parts[1]
-	file := parts[2]
 
 	// Check for @branch in repo part
 	branch := "main"
@@ -481,6 +512,12 @@ func expandGitHubShorthand(shorthand string) (string, error) {
 	}
 
 	repo := repoWithBranch
+
+	// If no file specified, default to repo name (common pattern: gh:user/repo -> user/repo/repo)
+	file := repo
+	if len(parts) >= 3 {
+		file = parts[2]
+	}
 
 	return fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", user, repo, branch, file), nil
 }
@@ -585,7 +622,10 @@ func installScript(scriptPath, url string, isDryRun bool) error {
 	}
 	os.Chmod(installPath, 0755)
 
-	logDebug(fmt.Sprintf("%s installed to %s", scriptName, installDir))
+	// Show what was installed (clean up local: prefix for display)
+	displayURL := strings.TrimPrefix(url, "local:")
+	fmt.Fprintf(os.Stderr, "Installing %s as %s\n", displayURL, scriptName)
+	fmt.Fprintf(os.Stderr, "  Installed to: %s\n", installDir)
 
 	// Update install list
 	cacheDir := detectCacheDir()

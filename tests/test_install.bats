@@ -58,7 +58,8 @@ SCRIPT
     chmod +x "$temp_script"
 
     run "$URSH_BINARY" --install "$temp_script" 2>&1
-    [[ "$output" == *"is now available"* ]]
+    [[ "$output" == *"Installing"* ]]
+    [[ "$output" == *"Installed to"* ]]
 }
 
 @test "Install with update" {
@@ -77,7 +78,7 @@ echo "v2"
 SCRIPT
 
     run "$URSH_BINARY" --update --install "$temp_script" 2>&1
-    [[ "$output" == *"is now available"* ]]
+    [[ "$output" == *"Installing"* ]]
 }
 
 @test "Install with local file" {
