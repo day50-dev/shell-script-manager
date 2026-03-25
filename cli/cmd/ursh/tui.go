@@ -76,7 +76,7 @@ func promptUserTUI(action Action, manifest *UrshiManifest, scriptPath string) (D
 		fmt.Fprintln(os.Stderr)
 
 		// Show options with checkboxes
-		fmt.Fprintln(os.Stderr, "  \033[1mChoose an option:\033[0m\n")
+		fmt.Fprint(os.Stderr, "  \033[1mChoose an option:\033[0m\n\n")
 		for i, opt := range options {
 			cursor := "  "
 			checkbox := "[ ]"
