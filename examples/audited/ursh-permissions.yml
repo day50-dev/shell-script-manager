@@ -1,0 +1,40 @@
+version: 1
+name: example-script
+description: Removes unused EBS volumes older than 30 days
+script_path: example-script.sh
+script_url: https://github.com/example/repo/raw/main/example-script.sh
+
+checksum:
+  algorithm: sha256
+  value: 8f3c9a7b2d1e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+
+permissions:
+  sudo: true
+  filesystem:
+    read:
+      - "/etc/aws/**"
+      - "/var/log/**"
+    write:
+      - "/tmp/ursh-*"
+      - "/var/run/ursh.lock"
+    execute:
+      - "/usr/bin/aws"
+      - "/usr/bin/jq"
+  network:
+    outbound: true
+    allowed_hosts:
+      - "*.amazonaws.com"
+      - "169.254.169.254"
+  environment:
+    required:
+      - AWS_REGION
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+    optional:
+      - DEBUG
+
+audit:
+  performed_by: ursh-audit/1.0.0
+  timestamp: "2026-02-17T18:42:11Z"
+  confidence: high
+  notes: "Static analysis detected aws cli usage and filtered rm"
