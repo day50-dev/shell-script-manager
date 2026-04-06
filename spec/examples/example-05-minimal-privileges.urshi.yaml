@@ -1,0 +1,42 @@
+# =============================================================================
+# Example 5: Minimal Privileges Script
+# =============================================================================
+# Demonstrates a script with minimal required privileges (principle of least privilege)
+# =============================================================================
+
+name: system-info
+description: Displays basic system information without modifying any files or network access
+url: https://github.com/system-utils/info/blob/main/sysinfo.sh
+homepage: https://github.com/system-utils/info
+readme: ""
+license: ""
+checksum: "sha256:e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8"
+date: "2024-01-18T12:00:00Z"
+compliances: []
+privileges:
+  files:
+    read:
+      - /proc/version
+      - /proc/meminfo
+      - /proc/cpuinfo
+      - /etc/os-release
+    write: []
+  network:
+    get: []
+    put: []
+  tools:
+    - name: cat
+      scope: /proc/*
+    - name: uname
+      scope: unrestricted
+    - name: echo
+      scope: unrestricted
+  dynamic: []
+version: "1.0.0"
+author:
+  name: System Utils Team
+tags:
+  - system
+  - info
+  - readonly
+  - safe

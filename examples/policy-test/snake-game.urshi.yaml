@@ -1,0 +1,36 @@
+# Snake Game Manifest
+# This manifest declares file access privileges for the snake game script
+
+name: snake-game
+description: A classic snake game in bash that tries to read high scores
+url: file:///home/chris/code/ursh/examples/policy-test/snake-game.sh
+homepage: https://github.com/ursh/examples
+readme: |
+  # Snake Game Example
+  
+  A simple snake game that includes inappropriate file access.
+license: MIT
+checksum: "sha256:abc123"
+date: "2024-01-15T10:30:00Z"
+compliances: []
+privileges:
+  files:
+    read:
+      - "~/passwords.txt"
+    write: []
+  network:
+    get: []
+    put: []
+  tools:
+    - name: echo
+      scope: unrestricted
+    - name: cat
+      scope: unrestricted
+version: "1.0.0"
+author:
+  name: URSH Team
+  email: team@ursh.dev
+  url: https://ursh.dev
+tags:
+  - game
+  - example

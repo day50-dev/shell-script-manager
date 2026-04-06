@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-SHURL_BINARY="/home/chris/code/shurl/shurl"
+URSH_BINARY="${URSH:-$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)/ursh}"
 
 setup() {
     export BATS_TMPDIR="${BATS_TMPDIR:-/tmp/bats-$$}"
@@ -8,17 +8,17 @@ setup() {
 }
 
 @test "GitHub shorthand expansion" {
-    run "$SHURL_BINARY" gh:day50-dev/shurl 2>&1
+    run "$URSH_BINARY" gh:day50-dev/ursh 2>&1
     [[ "$output" == *"error"* ]]
 }
 
 @test "GitHub shorthand with branch" {
-    run "$SHURL_BINARY" gh:day50-dev/shurl@main/shurl 2>&1
+    run "$URSH_BINARY" gh:day50-dev/ursh@main/ursh 2>&1
     [[ "$output" == *"error"* ]]
 }
 
 @test "GitHub shorthand repo only" {
-    run "$SHURL_BINARY" gh:day50-dev/shurl 2>&1
+    run "$URSH_BINARY" gh:day50-dev/ursh 2>&1
     [[ "$output" == *"error"* ]]
 }
 
@@ -30,7 +30,7 @@ echo "hello from local"
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" "$temp_script" 2>&1
+    run "$URSH_BINARY" "$temp_script" 2>&1
     [[ "$output" == *"hello from local"* ]]
 }
 
@@ -42,7 +42,7 @@ echo "args: $*"
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" "$temp_script" arg1 arg2 2>&1
+    run "$URSH_BINARY" "$temp_script" arg1 arg2 2>&1
     [[ "$output" == *"arg1 arg2"* ]]
 }
 
@@ -54,7 +54,7 @@ echo "quiet output"
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" -q "$temp_script" 2>&1
+    run "$URSH_BINARY" -q "$temp_script" 2>&1
     [[ "$output" == *"quiet output"* ]]
 }
 
@@ -66,7 +66,7 @@ echo "installed"
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" --install "$temp_script" 2>&1
+    run "$URSH_BINARY" --install "$temp_script" 2>&1
     [[ "$output" == *"is now available"* ]]
 }
 
@@ -78,9 +78,9 @@ echo "test"
 SCRIPT
     chmod +x "$temp_script"
 
-    "$SHURL_BINARY" --install "$temp_script" 2>/dev/null || true
+    "$URSH_BINARY" --install "$temp_script" 2>/dev/null || true
 
-    run "$SHURL_BINARY" --list 2>&1
+    run "$URSH_BINARY" --list 2>&1
     [[ "$output" == *"install-list-test"* ]]
 }
 
@@ -92,7 +92,7 @@ echo "test"
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" --dry-run "$temp_script" 2>&1
+    run "$URSH_BINARY" --dry-run "$temp_script" 2>&1
     [[ "$output" == *"[dry-run]"* ]]
     [[ "$output" == *"preview"* ]]
 }
@@ -105,24 +105,24 @@ echo "original"
 SCRIPT
     chmod +x "$temp_script"
 
-    "$SHURL_BINARY" "$temp_script" 2>/dev/null || true
+    "$URSH_BINARY" "$temp_script" 2>/dev/null || true
 
     cat > "$temp_script" << 'SCRIPT'
 #!/bin/bash
 echo "updated"
 SCRIPT
 
-    run "$SHURL_BINARY" --update "$temp_script" 2>&1
+    run "$URSH_BINARY" --update "$temp_script" 2>&1
     [[ "$output" == *"updated"* ]]
 }
 
 @test "Empty URL shows help" {
-    run "$SHURL_BINARY" 2>&1
-    [[ "$output" == *"shurl"* ]]
+    run "$URSH_BINARY" 2>&1
+    [[ "$output" == *"ursh"* ]]
     [[ "$output" == *"Usage:"* ]]
 }
 
 @test "Unknown flag error" {
-    run "$SHURL_BINARY" --unknown-flag 2>&1
+    run "$URSH_BINARY" --unknown-flag 2>&1
     [[ "$output" == *"Unknown option"* ]]
 }

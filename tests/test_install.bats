@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-SHURL_BINARY="/home/chris/code/shurl/shurl"
+URSH_BINARY="${URSH:-$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)/ursh}"
 
 setup() {
     export HOME="$BATS_TMPDIR/home"
@@ -19,7 +19,7 @@ echo "installed"
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" --install "$temp_script" 2>&1
+    run "$URSH_BINARY" --install "$temp_script" 2>&1
     [ "$status" -eq 0 ]
     [ -f "$HOME/.local/bin/install-test" ]
 }
@@ -32,7 +32,7 @@ echo "exec"
 SCRIPT
     chmod +x "$temp_script"
 
-    "$SHURL_BINARY" --install "$temp_script" 2>/dev/null || true
+    "$URSH_BINARY" --install "$temp_script" 2>/dev/null || true
     [ -x "$HOME/.local/bin/exec-test" ]
 }
 
@@ -44,7 +44,7 @@ echo "dry"
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" --dry-run --install "$temp_script" 2>&1
+    run "$URSH_BINARY" --dry-run --install "$temp_script" 2>&1
     [[ "$output" == *"[dry-run]"* ]]
     [ ! -f "$HOME/.local/bin/dry-test" ]
 }
@@ -57,8 +57,9 @@ echo "msg"
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" --install "$temp_script" 2>&1
-    [[ "$output" == *"is now available"* ]]
+    run "$URSH_BINARY" --install "$temp_script" 2>&1
+    [[ "$output" == *"Installing"* ]]
+    [[ "$output" == *"Installed to"* ]]
 }
 
 @test "Install with update" {
@@ -69,15 +70,15 @@ echo "v1"
 SCRIPT
     chmod +x "$temp_script"
 
-    "$SHURL_BINARY" --install "$temp_script" 2>/dev/null || true
+    "$URSH_BINARY" --install "$temp_script" 2>/dev/null || true
 
     cat > "$temp_script" << 'SCRIPT'
 #!/bin/bash
 echo "v2"
 SCRIPT
 
-    run "$SHURL_BINARY" --update --install "$temp_script" 2>&1
-    [[ "$output" == *"is now available"* ]]
+    run "$URSH_BINARY" --update --install "$temp_script" 2>&1
+    [[ "$output" == *"Installing"* ]]
 }
 
 @test "Install with local file" {
@@ -88,6 +89,6 @@ echo "local"
 SCRIPT
     chmod +x "$temp_script"
 
-    run "$SHURL_BINARY" --install "$temp_script" 2>&1
+    run "$URSH_BINARY" --install "$temp_script" 2>&1
     [ "$status" -eq 0 ]
 }

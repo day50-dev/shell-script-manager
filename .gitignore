@@ -1,0 +1,4 @@
+.*
+__pycache__
+cli/cmd/ursh/ursh
+cli/ursh

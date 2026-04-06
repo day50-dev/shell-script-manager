@@ -1,0 +1,48 @@
+# =============================================================================
+# Example 1: Simple Hello World Script
+# =============================================================================
+# A minimal urshi manifest for a basic hello world script with no privileges
+# =============================================================================
+
+name: hello-world
+description: A simple hello world script for testing ursh functionality
+url: https://github.com/ursh/examples/blob/main/hello.sh
+homepage: https://github.com/ursh/examples
+readme: |
+  # Hello World Example
+
+  This is a minimal example script that prints "Hello, World!" to stdout.
+
+  ## Usage
+
+  ```bash
+  ursh run hello-world
+  ```
+
+  ## Requirements
+
+  None - this script only uses basic shell echo command.
+license: MIT
+checksum: "sha256:a3f2b8c9d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1"
+date: "2024-01-15T10:30:00Z"
+compliances: []
+privileges:
+  files:
+    read: []
+    write: []
+  network:
+    get: []
+    put: []
+  tools:
+    - name: echo
+      scope: unrestricted
+  dynamic: []
+version: "1.0.0"
+author:
+  name: URSH Team
+  email: team@ursh.dev
+  url: https://ursh.dev
+tags:
+  - example
+  - hello-world
+  - basic

@@ -1,0 +1,96 @@
+# =============================================================================
+# Example 3: Healthcare Data Backup Script (HIPAA Compliant)
+# =============================================================================
+# A urshi manifest for a HIPAA-compliant healthcare data backup script
+# =============================================================================
+
+name: healthcare-backup
+description: Secure backup script for healthcare data with HIPAA compliance requirements and encrypted storage
+url: https://github.com/healthcare-solutions/secure-tools/blob/main/backup/health-backup.sh
+homepage: https://healthcare-solutions.com/secure-tools
+readme: |
+  # Healthcare Backup Tool
+
+  This script performs encrypted backups of healthcare data in compliance
+  with HIPAA regulations.
+
+  ## Features
+
+  - AES-256 encryption
+  - Audit logging
+  - Secure key management
+  - Compliance reporting
+
+  ## Requirements
+
+  - OpenSSL 1.1.1+
+  - AWS CLI (for S3 storage)
+  - Valid HIPAA compliance certification
+license: "Custom - See https://healthcare-solutions.com/license"
+checksum: "sha512:c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+date: "2024-01-22T08:00:00Z"
+compliances:
+  - HIPAA
+  - SOC-2-Type-2
+  - HITRUST
+  - ISO-27001
+privileges:
+  files:
+    read:
+      - /var/lib/healthcare/data/*
+      - /etc/healthcare/config.yml
+      - /etc/ssl/certs/healthcare-ca.pem
+      - ~/.aws/credentials
+    write:
+      - /var/backups/healthcare/*
+      - /var/log/healthcare/backup.log
+      - /tmp/healthcare-encrypt-*
+  network:
+    get:
+      - https://s3.amazonaws.com/healthcare-backups/*
+      - https://healthcare-solutions.com/keys/public.pem
+    put:
+      - https://s3.amazonaws.com/healthcare-backups/uploads/*
+      - https://audit.healthcare-solutions.com/log?*
+  tools:
+    - name: openssl
+      scope: unrestricted
+    - name: aws
+      scope: s3://healthcare-backups/*
+    - name: gpg
+      scope: unrestricted
+    - name: tar
+      scope: /var/lib/healthcare/data
+    - name: logger
+      scope: unrestricted
+    - name: chmod
+      scope: /var/backups/healthcare
+  dynamic:
+    - what: Encryption key rotation schedule
+      how: Computed from last rotation date in config
+    - what: Backup file naming convention
+      how: Timestamp and checksum interpolation
+    - what: Audit log entries
+      how: Template with runtime variables
+version: "3.2.1"
+author:
+  name: Healthcare Solutions Security Team
+  email: security@healthcare-solutions.com
+  url: https://healthcare-solutions.com
+tags:
+  - healthcare
+  - backup
+  - hipaa
+  - security
+  - encryption
+  - compliance
+dependencies:
+  - name: openssl
+    version: ">=1.1.1"
+  - name: aws-cli
+    version: ">=2.0.0"
+environment:
+  HEALTHCARE_API_KEY: required
+  ENCRYPTION_KEY_ID: required
+  BACKUP_REGION: required
+  AUDIT_ENDPOINT: required

@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-SHURL_BINARY="/home/chris/code/shurl/shurl"
+URSH_BINARY="${URSH:-$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)/ursh}"
 
 setup() {
     export HOME="$BATS_TMPDIR/home"
@@ -12,8 +12,8 @@ teardown() {
 }
 
 @test "List shows no packages when empty" {
-    rm -f "$HOME/.cache/shurl/install-list.txt" 2>/dev/null || true
-    run "$SHURL_BINARY" --list 2>&1
+    rm -f "$HOME/.cache/ursh/install-list.txt" 2>/dev/null || true
+    run "$URSH_BINARY" --list 2>&1
     [[ "$output" == *"No installed packages"* ]]
 }
 
@@ -25,9 +25,9 @@ echo "test"
 SCRIPT
     chmod +x "$temp_script"
 
-    "$SHURL_BINARY" --install "$temp_script" 2>/dev/null || true
+    "$URSH_BINARY" --install "$temp_script" 2>/dev/null || true
 
-    run "$SHURL_BINARY" --list 2>&1
+    run "$URSH_BINARY" --list 2>&1
     [[ "$output" == *"list-test"* ]]
 }
 
@@ -39,9 +39,9 @@ echo "date"
 SCRIPT
     chmod +x "$temp_script"
 
-    "$SHURL_BINARY" --install "$temp_script" 2>/dev/null || true
+    "$URSH_BINARY" --install "$temp_script" 2>/dev/null || true
 
-    run "$SHURL_BINARY" --list 2>&1
+    run "$URSH_BINARY" --list 2>&1
     [[ "$output" == *date-test* ]]
 }
 
@@ -53,9 +53,9 @@ echo "format"
 SCRIPT
     chmod +x "$temp_script"
 
-    "$SHURL_BINARY" --install "$temp_script" 2>/dev/null || true
+    "$URSH_BINARY" --install "$temp_script" 2>/dev/null || true
 
-    run "$SHURL_BINARY" --list 2>&1
+    run "$URSH_BINARY" --list 2>&1
     [[ "$output" == *"NAME"* ]]
     [[ "$output" == *"DATE"* ]]
     [[ "$output" == *"URL"* ]]
@@ -74,10 +74,10 @@ echo "2"
 SCRIPT
     chmod +x "$temp_script1" "$temp_script2"
 
-    "$SHURL_BINARY" --install "$temp_script1" 2>/dev/null || true
-    "$SHURL_BINARY" --install "$temp_script2" 2>/dev/null || true
+    "$URSH_BINARY" --install "$temp_script1" 2>/dev/null || true
+    "$URSH_BINARY" --install "$temp_script2" 2>/dev/null || true
 
-    run "$SHURL_BINARY" --list 2>&1
+    run "$URSH_BINARY" --list 2>&1
     [[ "$output" == *"multi1"* ]]
     [[ "$output" == *"multi2"* ]]
 }
@@ -90,8 +90,8 @@ echo "full"
 SCRIPT
     chmod +x "$temp_script"
 
-    "$SHURL_BINARY" --install "$temp_script" 2>/dev/null || true
+    "$URSH_BINARY" --install "$temp_script" 2>/dev/null || true
 
-    run "$SHURL_BINARY" --list 2>&1
+    run "$URSH_BINARY" --list 2>&1
     [[ "$output" == *"fullpath-test"* ]]
 }
