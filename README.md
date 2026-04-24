@@ -1,11 +1,34 @@
+# ursh
+
 <p align="center">
   <img width="460" height="181" alt="logo" src="https://github.com/user-attachments/assets/dd34cef1-1164-4d77-a76e-3d8caf58a233" />
-  <br/><strong>Like npx or uvx, but for shell scripts</strong>
+  <br/><strong>Permission-aware shell script execution</strong>
 </p>
 
-**ursh** is a simple tool that runs shell scripts from URLs. Think of it as a better alternative to `curl https://example.com/script.sh | bash`.
+**ursh** generates machine-readable permission audits for shell scripts. Instead of blindly running `curl | bash`, ursh analyzes scripts and produces structured permission manifests that can be merged, aggregated, and analyzed—especially useful for understanding transitive dependencies.
 
-It caches scripts locally so you don't download them every time, supports GitHub shorthand, passes arguments correctly, and has a dry-run mode to preview what will execute.
+The core use case: when a script has dependencies, you can run audits on each dependency and perform set operations (intersection, union, difference) to understand what permissions are actually needed.
+
+## Quick Start
+
+```bash
+# Audit a script - outputs JSON permission manifest
+ursh audit gh:user/repo/script.sh
+
+# Run with manifest (if one exists alongside the script)
+ursh gh:user/repo/script.sh
+
+# Merge audits from multiple scripts
+ursh audit dep-a.sh > a.json
+ursh audit dep-b.sh > b.json
+ursh merge a.json b.json
+
+# Find common permissions across dependencies
+ursh intersect dep-audit.json dep-b.json dep-c.json
+
+# See what script-b needs that script-a already has
+ursh diff --what-new dep-audit.json dep-baudit.json
+```
 
 ## Installation
 
@@ -13,254 +36,251 @@ It caches scripts locally so you don't download them every time, supports GitHub
 curl -sSL day50.dev/ursh | bash
 ```
 
-That's the last time you'll ever have to curl and bash.
+## Core Concepts
 
-## Quick Start
+### Permission Audits
+
+Each `ursh audit` generates a JSON manifest describing exactly what the script needs:
+
+```json
+{
+  "name": "my-setup",
+  "url": "https://example.com/setup.sh",
+  "checksum": "sha256:abc123...",
+  "permissions": {
+    "files": {
+      "read": [
+        {"path": "/etc/hosts", "line": 15, "command": "cat /etc/hosts"}
+      ],
+      "write": [
+        {"path": "/tmp/ursh-*", "line": 23, "command": "echo $PID > /tmp/ursh-$PID"}
+      ]
+    },
+    "network": {
+      "get": ["https://api.example.com/*"],
+      "put": []
+    },
+    "tools": [
+      {"command": "curl", "line": 10},
+      {"command": "jq", "line": 12}
+    ]
+  }
+}
+```
+
+### Mergeable & Aggregatable
+
+Audits are designed for set operations:
 
 ```bash
-# Run a script from a URL
-ursh https://example.com/script.sh
+# Union: everything needed by either script
+ursh union audit-a.json audit-b.json
 
-# Use GitHub shorthand (way easier to read)
-ursh gh:user/repo/script.sh
+# Intersection: permissions needed by ALL scripts
+ursh intersect audit-a.json audit-b.json audit-c.json
 
-# Install a tool so you can run it like a normal command
-ursh --install gh:user/repo/tool.sh
-tool.sh --help  # available everywhere now
+# Difference: what's needed by A but not by B
+ursh diff audit-a.json audit-b.json
 
-# See what would run without actually executing
-ursh --dry-run gh:user/repo/script.sh
-
-# Update a cached script (force fresh download)
-ursh --update gh:user/repo/script.sh
-
-# Run with guard (isolation)
-ursh --guard chroot gh:user/repo/script.sh
-ursh --guard docker gh:user/repo/script.sh
+# Reduce: merge an entire directory of audits
+ursh reduce ./audits/ --output combined.json
 ```
 
-If the script has the common format: ` user/<x>/<x> ` it can be shortened, just drop the second `<x>`
-
-For instance, updating ursh is:
-
-```
-$ ursh -u gh:day50-dev/ursh
-```
-or simply
-```
-$ ursh -u ursh
-```
-
-## Why use this?
-
-- **No copy-paste**: One command, no manual downloads
-- **Caching**: First run downloads, every run after is instant (local file)
-- **GitHub shorthand**: `gh:user/repo/file` is much nicer than the raw URL
-- **Works like npx/uvx**: Install scripts to `~/.local/bin` and use them as commands
-- **Isolation guards**: Run scripts in chroot or Docker containers
-- **Portable**: Works on macOS, Linux, BSD anywhere with bash
+This is especially valuable for:
+- **Dependency analysis**: See exactly what permissions a script chain requires
+- **Least privilege enforcement**: Start with union, reduce to intersection for shared deps
+- **Audit trails**: Track permission changes across versions
 
 ## Usage
 
-### Running scripts with isolation guards
+### Auditing Scripts
 
 ```bash
-# Run script in a chroot environment (requires root)
-ursh --guard chroot gh:user/repo/script.sh
+# Audit from GitHub shorthand
+ursh audit gh:user/repo/setup.sh
 
-# Run script in Docker container
-ursh --guard docker gh:user/repo/script.sh
+# Audit from URL
+ursh audit https://example.com/install.sh
 
-# Preview guard execution
-ursh --dry-run --guard docker gh:user/repo/script.sh
+# Audit local script
+ursh audit ./local-script.sh
+
+# Output format (default: JSON, also supports YAML)
+ursh audit --format yaml gh:user/repo/script.sh
+
+# Verbose output (show which line triggered each permission)
+ursh audit -v gh:user/repo/script.sh
 ```
 
-### Running scripts
+### Running Scripts
 
 ```bash
-# Direct URL
-ursh https://example.com/setup.sh
+# Standard run (will prompt if manifest exists)
+ursh gh:user/repo/script.sh
 
-# With arguments (passed through to the script)
-ursh https://example.com/tool.sh install --verbose arg1 arg2
+# Skip permission checks (trust the script)
+ursh --no-policy gh:user/repo/script.sh
 
-# GitHub shorthand
-ursh gh:myorg/scripts/dev-setup.sh
+# Dry-run mode
+ursh --dry-run gh:user/repo/script.sh
 
-# With branch specification
-ursh gh:myorg/scripts@develop/deploy.sh
-ursh gh:user/repo@v1.2.3/install.sh
+# With arguments
+ursh gh:user/repo/deploy.sh --env production
 ```
 
-### Installing tools
+### Set Operations
 
 ```bash
-# Install a script as a permanent command
-ursh --install gh:user/repo/tool.sh
-# Now you can run: tool.sh (or just 'tool' if the URL ends in .sh)
+# Merge two audits
+ursh merge audit-a.json audit-b.json -o combined.json
 
-# Update and install fresh
-ursh --update --install gh:user/repo/tool.sh
+# Find common permissions (intersection)
+ursh intersect dep-a.json dep-b.json
 
-# Preview what would be installed
-ursh --dry-run --install gh:user/repo/tool.sh
+# See what's unique to each
+ursh diff dep-a.json dep-b.json
+
+# Analyze a dependency chain
+cat deps.txt | xargs -I{} ursh audit {} | ursh reduce | ursh intersect - > shared-perms.json
 ```
 
-After installing, the tool is in `~/.local/bin`. Add that to your PATH if it isn't already.
-
-### Listing installed packages
+### Working with Dependencies
 
 ```bash
-# See everything you've installed with ursh
-ursh --list
-ursh -l
+# Generate audits for all dependencies
+for dep in $DEPS; do
+  ursh audit $dep > "audits/$(basename $dep).json"
+done
 
-# Output format: name date url
-# my-tool    2026-02-12  gh:user/my-tool.sh
-# weather    2026-02-10  https://example.com/weather.sh
+# What's the minimal permission set for all deps?
+ursh reduce audits/*.json | ursh intersect - shared.json
+
+# What new permissions does this version need?
+ursh diff audits/old.json audits/new.json
 ```
 
-### Updating
+## Manifest Format
 
-```bash
-# Update by URL
-ursh --update gh:user/repo/script.sh
-ursh -u https://example.com/install.sh
+The audit output is a structured JSON (or YAML) document:
 
-# Update by package name (if installed via --install)
-ursh -u my-tool  # looks up the URL from install list
-
-# Update and run with arguments
-ursh --update gh:company/tools/deploy.sh --env production
-
-# Preview the update
-ursh --dry-run --update gh:user/repo/setup.sh
-```
-
-### Other options
-
-```bash
-# Clear the cache
-ursh --clear-cache
-
-# Quiet mode (less output)
-ursh -q gh:user/repo/script.sh
-
-# Show version
-ursh --version
-
-# Show help
-ursh --help
-```
-
-You can combine short flags: `-nuq` (dry-run + update + quiet), `-iu` (install + update), etc.
-
-## How it works
-
-1. You give it a URL (or GitHub shorthand)
-2. It checks if the script is already cached (by URL hash)
-3. If not cached or `--update` flag: downloads with curl or wget
-4. Saves to cache directory (`~/.cache/ursh` on Linux, `~/Library/Caches/ursh` on macOS)
-5. Makes it executable and runs it (or copies to `~/.local/bin` if `--install`)
-6. If installing, also records it in `~/.cache/ursh/install-list.txt` so you can update by name later
-
-## Cache and install locations
-
-| Platform | Cache | Install (`--install`) |
-|----------|-------|----------------------|
-| Linux | `~/.cache/ursh` | `~/.local/bin` |
-| macOS | `~/Library/Caches/ursh` | `~/.local/bin` |
-| BSD | `~/.cache/ursh` | `~/.local/bin` |
-
-Override cache location with `SHURL_CACHE` environment variable.
-
-## Safety notes
-
-There's a dry run here which helps. But honestly, npx and uvx has the exact same risk. If you don't have a problem npx'ing something with hundreds of cascading dependencies then... 
-
-Anyways...
-
-Recommended workflow for unknown scripts:
-```bash
-ursh --dry-run <url>      # see what it does
-cat ~/.cache/ursh/*.sh    # inspect the cached version
-ursh <url>                # run if you're comfortable
+```json
+{
+  "name": "script-name",
+  "url": "https://...",
+  "version": "1.0.0",
+  "checksum": "sha256:...",
+  "date": "2026-04-24T10:00:00Z",
+  "permissions": {
+    "files": {
+      "read": [
+        {"path": "/etc/resolv.conf", "line": 5, "command": "cat /etc/resolv.conf"}
+      ],
+      "write": [
+        {"path": "/var/log/app.log", "line": 12, "command": ">> /var/log/app.log"}
+      ]
+    },
+    "network": {
+      "get": ["https://api.github.com/*", "https://releases.example.com/*"],
+      "put": ["https://telemetry.example.com/events"]
+    },
+    "tools": [
+      {"command": "curl", "line": 8, "type": "external"},
+      {"command": "jq", "line": 15, "type": "external"}
+    ],
+    "dynamic": [
+      {"what": "env-var:AUTH_TOKEN", "how": "reads", "source": "line 20"}
+    ]
+  }
+}
 ```
 
 ## Examples
 
+### CI/CD Security Review
+
 ```bash
-# Run with guard (isolation)
-ursh --guard docker gh:user/repo/script.sh
-ursh --guard chroot gh:user/repo/tool.sh
+# Before deploying, audit the entire chain
+ursh audit gh:org/ci/setup.sh > ci-setup.json
+ursh audit gh:org/ci/deploy.sh > ci-deploy.json
+ursh audit gh:org/ci/test.sh > ci-test.json
 
-# Quick Docker install (hypothetical)
-ursh https://get.docker.com
+# What's the total permission surface?
+ursh union ci-*.json > ci-permissions.json
 
-# Rust installer
-ursh https://sh.rustup.rs
-
-# Team dev setup
-ursh gh:myorg/dev/setup.sh
-
-# Install a CLI tool and use it
-ursh --install gh:cli-tools/git-branch-manager.sh
-git-branch-manager list
-
-# Update that tool later
-ursh -u git-branch-manager
-
-# CI/CD usage
-ursh --update gh:org/ci/setup.sh
-ursh gh:org/ci/test.sh
+# What's needed by ALL stages (intersection)?
+ursh intersect ci-*.json > shared-permissions.json
 ```
+
+### Dependency Auditing
+
+```bash
+# Audit each dependency
+ursh audit gh:kelseyhightower/nvidia-device-plugin.sh > nvidia.json
+ursh audit gh:helm/helm.sh > helm.json
+ursh audit gh:kubectl/kubectl.sh > kubectl.json
+
+# Combined: all permissions needed
+ursh reduce ./charts/audits/ -o chart-permissions.json
+
+# Minimal: only shared permissions (if running all)
+ursh intersect ./charts/audits/*.json -o shared-permissions.json
+```
+
+### Policy Generation
+
+```bash
+# Generate a least-privilege policy from audits
+ursh audit gh:user/repo/script.sh | ursh generate-policy > policy.yaml
+
+# Apply policy to future runs
+ursh --policy policy.yaml gh:user/repo/script.sh
+```
+
+## Why ursh?
+
+- **Transparency**: See exactly what every script will do before running
+- **Composable**: Merge audits from multiple sources with set operations
+- **Dependency-aware**: Understand transitive permission requirements
+- **Portable**: Works on Linux, macOS, BSD
+
+## How It Works
+
+1. `ursh audit` analyzes the script (static analysis + sandbox hints)
+2. Outputs structured permission manifest (JSON/YAML)
+3. When running, ursh compares the script's behavior against the manifest
+4. Prompts for confirmation, verifies checksums, executes
+
+## Cache & Config
+
+| Platform | Cache | Config |
+|----------|-------|--------|
+| Linux | `~/.cache/ursh` | `~/.config/ursh` |
+| macOS | `~/Library/Caches/ursh` | `~/.config/ursh` |
+| BSD | `~/.cache/ursh` | `~/.config/ursh` |
+
+Override with `URSH_CACHE` and `XDG_CONFIG_HOME` environment variables.
 
 ## FAQ
 
-**Q: How is this different from `curl | bash`?**  
-A: ursh caches scripts locally so you don't re-download every time, supports GitHub shorthand, passes arguments properly, has dry-run mode, and can install tools to your PATH. Also it's safer because you can inspect the cached file.
+**Q: How is this different from guardrails/sandboxing tools?**  
+A: ursh is about *description and audit*, not enforcement. It tells you what a script will do, generates portable permission manifests, and enables set operations on those manifests. Guards (chroot, docker) are optional isolation, not the primary feature.
 
-**Q: Can I use private GitHub repos?**  
-A: Yes, set `GITHUB_TOKEN` environment variable:
-```bash
-GITHUB_TOKEN=xxx ursh https://raw.githubusercontent.com/private/repo/main/script.sh
-```
+**Q: Can I trust the audits?**  
+A: Audits are based on static analysis. For higher confidence, run scripts in a sandbox while auditing to capture dynamic behavior. The `confidence` field in audits reflects analysis quality.
 
-**Q: What if I don't have `~/.local/bin` in my PATH?**  
-A: Add it: `export PATH="$HOME/.local/bin:$PATH"` (put that in your shell config)
+**Q: How do set operations work?**  
+A: File paths are normalized and matched by glob. Network URLs are matched by host pattern. Tools are matched by command name. Intersection finds what appears in all inputs; union finds everything.
 
-**Q: How do I uninstall something?**  
-A: `rm ~/.local/bin/<tool-name>` and remove the line from `~/.cache/ursh/install-list.txt`
-
-**Q: Does it work on Windows?**  
-A: Only if you have bash (WSL, Git Bash, Cygwin). Not native Windows.
-
-**Q: What about dependencies?**  
-A: ursh just runs scripts. If your script needs dependencies, handle that in the script itself.
-
-**Q: How do guards work?**  
-A: Guards provide isolation:
-- `--guard chroot` runs scripts in a chroot environment (requires root, setup required)
-- `--guard docker` runs scripts in a Docker container (requires Docker daemon)
-- Use `--dry-run` with guards to preview what would execute
-
-**Q: Do I need special permissions for guards?**  
-A: chroot requires root (`sudo`), docker requires your user to be in the docker group or root access.
-
-## Uninstallation
+## Installation
 
 ```bash
-# Remove ursh itself
-rm ~/.local/bin/ursh
-
-# Clear cache (optional)
-rm -rf ~/.cache/ursh      # Linux/BSD
-rm -rf ~/Library/Caches/ursh  # macOS
-
-# Remove installed tools (optional)
-# Check what you installed:
-ursh -l
-# Then remove individual tools from ~/.local/bin
+curl -sSL day50.dev/ursh | bash
 ```
 
+Or build from source:
 
+```bash
+git clone https://github.com/day50-dev/ursh
+cd ursh/cli/cmd/ursh
+go build -o ursh
+```
