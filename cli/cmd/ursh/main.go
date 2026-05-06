@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/md5"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,7 +20,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const version = "0.7.3"
+var version = "dev"
 
 // URSH_API_URL is the base URL for the ursh registry API
 const URSH_API_URL = "https://ursh.dev"
@@ -595,18 +596,14 @@ func showDryRun(scriptPath string, args []string) {
 }
 
 func installScript(scriptPath, url string, isDryRun bool) error {
-	homeDir := os.Getenv("HOME")
-	if homeDir == "" {
-		homeDir, _ = os.UserHomeDir()
-	}
-
-	installDir := filepath.Join(homeDir, ".local", "bin")
+	installDir := detectInstallDir()
 	if err := os.MkdirAll(installDir, 0755); err != nil {
 		return err
 	}
 
 	// Get script name from URL, not from cached file path (which is a hash)
 	scriptName := extractScriptName(url)
+	baseName := extractBaseName(url)
 
 	installPath := filepath.Join(installDir, scriptName)
 
@@ -614,18 +611,37 @@ func installScript(scriptPath, url string, isDryRun bool) error {
 		fmt.Fprintf(os.Stderr, "[dry-run] Would create directory: %s\n", installDir)
 		fmt.Fprintf(os.Stderr, "[dry-run] Would copy: %s\n", scriptPath)
 		fmt.Fprintf(os.Stderr, "[dry-run] Would install to: %s\n", installPath)
+		if scriptName != baseName {
+			fmt.Fprintf(os.Stderr, "[dry-run] Would link %s to %s\n", baseName, scriptName)
+		}
 		return nil
 	}
 
+	// Remove existing file or symlink at installPath
+	os.Remove(installPath)
 	if err := copyFile(scriptPath, installPath); err != nil {
 		return err
 	}
 	os.Chmod(installPath, 0755)
 
+	if scriptName != baseName {
+		basePath := filepath.Join(installDir, baseName)
+		os.Remove(basePath)
+		if err := os.Symlink(scriptName, basePath); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to create symlink %s: %v\n", baseName, err)
+		}
+	}
+
 	// Show what was installed (clean up local: prefix for display)
 	displayURL := strings.TrimPrefix(url, "local:")
 	fmt.Fprintf(os.Stderr, "Installing %s as %s\n", displayURL, scriptName)
+	if scriptName != baseName {
+		fmt.Fprintf(os.Stderr, "  Default command: %s (points to %s)\n", baseName, scriptName)
+	}
 	fmt.Fprintf(os.Stderr, "  Installed to: %s\n", installDir)
+
+	// Calculate checksum
+	checksum, _ := calculateChecksum(installPath)
 
 	// Update install list
 	cacheDir := detectCacheDir()
@@ -633,17 +649,7 @@ func installScript(scriptPath, url string, isDryRun bool) error {
 	listFile := filepath.Join(cacheDir, "install-list.txt")
 
 	today := time.Now().Format("2006-01-02")
-	entry := fmt.Sprintf("%s %s %s\n", scriptName, today, url)
-
-	f, err := os.OpenFile(listFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	if _, err := f.WriteString(entry); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
+	if err := updateInstallList(listFile, scriptName, checksum, today, url); err != nil {
 		return err
 	}
 
@@ -660,8 +666,10 @@ func listInstalled() {
 		return
 	}
 
+	installDir := detectInstallDir()
+
 	lines := strings.Split(string(data), "\n")
-	fmt.Fprintf(os.Stderr, "\n  NAME                 DATE         URL\n")
+	fmt.Fprintf(os.Stderr, "\n  NAME                 STATUS    DATE         URL\n")
 	fmt.Fprintf(os.Stderr, "  ―――――――――――――――――――――――――――――――――――――――――――――――――――――――\n")
 
 	for _, line := range lines {
@@ -669,12 +677,43 @@ func listInstalled() {
 			continue
 		}
 		parts := strings.Fields(line)
-		if len(parts) >= 3 {
-			name := parts[0]
-			date := parts[1]
-			url := strings.Join(parts[2:], " ")
-			fmt.Fprintf(os.Stderr, "  %-20s %-12s %s\n", name, date, url)
+		if len(parts) == 0 {
+			continue
 		}
+
+		name := parts[0]
+		status := "installed"
+		date := ""
+		url := ""
+
+		// New format: name checksum date url
+		if len(parts) >= 4 && len(parts[1]) == 64 {
+			date = parts[2]
+			url = strings.Join(parts[3:], " ")
+
+			installPath := filepath.Join(installDir, name)
+			if _, err := os.Stat(installPath); os.IsNotExist(err) {
+				status = "missing"
+			} else {
+				currentChecksum, _ := calculateChecksum(installPath)
+				if currentChecksum != parts[1] {
+					status = "modified"
+				}
+			}
+		} else if len(parts) >= 3 {
+			// Old format: name date url
+			date = parts[1]
+			url = strings.Join(parts[2:], " ")
+
+			installPath := filepath.Join(installDir, name)
+			if _, err := os.Stat(installPath); os.IsNotExist(err) {
+				status = "missing"
+			}
+		} else {
+			continue
+		}
+
+		fmt.Fprintf(os.Stderr, "  %-20s %-9s %-12s %s\n", name, status, date, url)
 	}
 }
 
@@ -858,27 +897,39 @@ Install location:
 	fmt.Println(help)
 }
 
-// extractScriptName extracts a friendly name from the URL
-// Similar to bash version: basename "$url" | sed 's/\?.*//' | sed 's/\.sh$//'
-func extractScriptName(url string) string {
+// extractScriptName extracts a friendly name from the URL, including tag if present
+func extractScriptName(urlStr string) string {
 	// For GitHub shorthand, extract the repo/file part
-	if strings.HasPrefix(url, "gh:") {
-		path := strings.TrimPrefix(url, "gh:")
-		// Remove branch or tag version (e.g., @main, @v1.2.3)
-		if idx := strings.Index(path, "@"); idx != -1 {
-			path = path[:idx]
+	if strings.HasPrefix(urlStr, "gh:") {
+		path := strings.TrimPrefix(urlStr, "gh:")
+		parts := strings.Split(path, "/")
+		if len(parts) < 2 {
+			return strings.TrimSuffix(path, ".sh")
 		}
-		// Get the filename (last component)
-		if idx := strings.LastIndex(path, "/"); idx != -1 {
-			path = path[idx+1:]
+
+		repoPart := parts[1]
+		tag := ""
+		if idx := strings.Index(repoPart, "@"); idx != -1 {
+			tag = repoPart[idx+1:]
+			repoPart = repoPart[:idx]
 		}
-		// Remove .sh extension
-		path = strings.TrimSuffix(path, ".sh")
-		return path
+
+		fileName := repoPart
+		if len(parts) >= 3 {
+			fileName = parts[len(parts)-1]
+		}
+
+		fileName = strings.TrimSuffix(fileName, ".sh")
+		if tag != "" && tag != "main" && tag != "master" {
+			return fileName + "-" + tag
+		}
+		return fileName
 	}
 
 	// For regular URLs, extract basename and clean it
-	name := filepath.Base(url)
+	cleanURL := strings.TrimPrefix(urlStr, "local:")
+	cleanURL = strings.TrimPrefix(cleanURL, "file://")
+	name := filepath.Base(cleanURL)
 	// Remove query parameters
 	if idx := strings.Index(name, "?"); idx != -1 {
 		name = name[:idx]
@@ -887,6 +938,90 @@ func extractScriptName(url string) string {
 	name = strings.TrimSuffix(name, ".sh")
 
 	return name
+}
+
+// extractBaseName extracts the base name without tag
+func extractBaseName(urlStr string) string {
+	if strings.HasPrefix(urlStr, "gh:") {
+		path := strings.TrimPrefix(urlStr, "gh:")
+		parts := strings.Split(path, "/")
+		if len(parts) < 2 {
+			return strings.TrimSuffix(path, ".sh")
+		}
+
+		repoPart := parts[1]
+		if idx := strings.Index(repoPart, "@"); idx != -1 {
+			repoPart = repoPart[:idx]
+		}
+
+		fileName := repoPart
+		if len(parts) >= 3 {
+			fileName = parts[len(parts)-1]
+		}
+
+		return strings.TrimSuffix(fileName, ".sh")
+	}
+	cleanURL := strings.TrimPrefix(urlStr, "local:")
+	cleanURL = strings.TrimPrefix(cleanURL, "file://")
+	name := filepath.Base(cleanURL)
+	if idx := strings.Index(name, "?"); idx != -1 {
+		name = name[:idx]
+	}
+	return strings.TrimSuffix(name, ".sh")
+}
+
+func calculateChecksum(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
+
+func detectInstallDir() string {
+	homeDir := os.Getenv("HOME")
+	if homeDir == "" {
+		homeDir, _ = os.UserHomeDir()
+	}
+	return filepath.Join(homeDir, ".local", "bin")
+}
+
+func updateInstallList(listFile, name, checksum, date, urlStr string) error {
+	data, err := os.ReadFile(listFile)
+	var lines []string
+	if err == nil {
+		lines = strings.Split(string(data), "\n")
+	}
+
+	found := false
+	var newLines []string
+	entry := fmt.Sprintf("%s %s %s %s", name, checksum, date, urlStr)
+
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) > 0 && parts[0] == name {
+			newLines = append(newLines, entry)
+			found = true
+		} else {
+			newLines = append(newLines, line)
+		}
+	}
+
+	if !found {
+		newLines = append(newLines, entry)
+	}
+
+	return os.WriteFile(listFile, []byte(strings.Join(newLines, "\n")+"\n"), 0644)
 }
 
 // Simple file copy since Go 1.20 doesn't have os.CopyFile

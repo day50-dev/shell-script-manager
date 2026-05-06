@@ -51,14 +51,13 @@ detect_install_dir() {
 # Defaults
 BINARY_NAME="ursh"
 REPO_URL="https://github.com/day50-dev/ursh"
-RAW_URL="https://raw.githubusercontent.com/day50-dev/ursh/main/ursh"
 INSTALL_DIR="${INSTALL_DIR:-$(detect_install_dir)}"
-TEMP_FILE=""
+TEMP_BUILD_DIR=""
 
 # Cleanup
 cleanup() {
-    if [[ -n "$TEMP_FILE" && -f "$TEMP_FILE" ]]; then
-        rm -f "$TEMP_FILE"
+    if [[ -n "$TEMP_BUILD_DIR" && -d "$TEMP_BUILD_DIR" ]]; then
+        rm -rf "$TEMP_BUILD_DIR"
     fi
 }
 
@@ -76,8 +75,12 @@ warn() { echo -e "${YELLOW}$1${NC}"; }
 
 # Check requirements
 check_requirements() {
-    if ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
-        error_exit "curl or wget is required to install ursh"
+    if ! command -v git &>/dev/null; then
+        error_exit "git is required to install ursh"
+    fi
+
+    if ! command -v go &>/dev/null; then
+        error_exit "go is required to build ursh. Please install Go: https://go.dev/doc/install"
     fi
     
     info "Detected OS: $(uname -s)"
@@ -96,33 +99,29 @@ check_requirements() {
     fi
 }
 
-# Download ursh
-download_ursh() {
-    info "Downloading ursh from GitHub..."
+# Build ursh
+build_ursh() {
+    info "Building ursh from source..."
     
-    TEMP_FILE=$(mktemp /tmp/ursh-install-XXXXXX)
+    TEMP_BUILD_DIR=$(mktemp -d /tmp/ursh-build-XXXXXX)
     
-    if command -v curl &>/dev/null; then
-        curl -fsSL "$RAW_URL" -o "$TEMP_FILE" || error_exit "Failed to download ursh"
-    elif command -v wget &>/dev/null; then
-        wget -qO "$TEMP_FILE" "$RAW_URL" || error_exit "Failed to download ursh"
+    git clone --depth 1 "$REPO_URL" "$TEMP_BUILD_DIR" || error_exit "Failed to clone repository"
+    
+    cd "$TEMP_BUILD_DIR/cli" || error_exit "Could not find cli directory in repository"
+    
+    go build -o "$BINARY_NAME" ./cmd/ursh/main.go ./cmd/ursh/tui.go || error_exit "Failed to build ursh"
+    
+    if [[ ! -s "$BINARY_NAME" ]]; then
+        error_exit "Built binary is empty"
     fi
     
-    if [[ ! -s "$TEMP_FILE" ]]; then
-        error_exit "Downloaded file is empty"
-    fi
-    
-    chmod +x "$TEMP_FILE" || error_exit "Failed to make executable"
-    
-    # Verify it's bash
-    if ! head -n 1 "$TEMP_FILE" | grep -q "bash"; then
-        error_exit "Downloaded file doesn't appear to be a bash script"
-    fi
+    chmod +x "$BINARY_NAME"
 }
 
 # Install ursh
 install_ursh() {
     local install_path="$INSTALL_DIR/$BINARY_NAME"
+    local source_binary="$TEMP_BUILD_DIR/cli/$BINARY_NAME"
     
     info "Installing to: $install_path"
     
@@ -140,9 +139,9 @@ install_ursh() {
     fi
     
     # Copy file
-    if cp "$TEMP_FILE" "$install_path" 2>/dev/null; then
+    if cp "$source_binary" "$install_path" 2>/dev/null; then
         success "Installed successfully"
-    elif sudo cp "$TEMP_FILE" "$install_path"; then
+    elif sudo cp "$source_binary" "$install_path"; then
         success "Installed with sudo"
     else
         error_exit "Failed to install to $install_path"
@@ -239,7 +238,7 @@ ENDL
     trap 'echo -e "\n${RED}Installation cancelled${NC}"; cleanup; exit 1' INT
     
     check_requirements
-    download_ursh
+    build_ursh
     install_ursh
     check_path
     show_usage
