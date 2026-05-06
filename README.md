@@ -1,5 +1,3 @@
-# ursh
-
 <p align="center">
   <img width="460" alt="logo" src="https://github.com/user-attachments/assets/dd34cef1-1164-4d77-a76e-3d8caf58a233" />
   <br/><strong>Permission-aware shell script execution</strong>
