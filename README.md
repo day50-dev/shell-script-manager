@@ -3,7 +3,7 @@
   <br/><strong>Permission-aware shell script execution</strong>
 </p>
 
-**ursh** generates machine-readable permission audits for shell scripts. Instead of blindly running `curl | bash`, ursh analyzes scripts and produces structured permission manifests that can be merged, aggregated, and analyzed—especially useful for understanding transitive dependencies.
+**ursh**, part of the [DAY50](https://day50.dev) suite of open-source tools for AI workflows, generates machine-readable permission audits for shell scripts. Instead of blindly running `curl | bash`, ursh analyzes scripts and produces structured permission manifests that can be merged, aggregated, and analyzed—especially useful for understanding transitive dependencies.
 
 The core use case: when a script has dependencies, you can run audits on each dependency and perform set operations (intersection, union, difference) to understand what permissions are actually needed.
 
