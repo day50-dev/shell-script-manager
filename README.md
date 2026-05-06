@@ -36,6 +36,14 @@ ursh diff --what-new dep-audit.json dep-baudit.json
 curl -sSL day50.dev/ursh | bash
 ```
 
+Or build from source:
+
+```bash
+git clone https://github.com/day50-dev/ursh
+cd ursh/cli/cmd/ursh
+go build -o ursh
+```
+
 ## Core Concepts
 
 ### Permission Audits
@@ -271,16 +279,4 @@ A: Audits are based on static analysis. For higher confidence, run scripts in a 
 **Q: How do set operations work?**  
 A: File paths are normalized and matched by glob. Network URLs are matched by host pattern. Tools are matched by command name. Intersection finds what appears in all inputs; union finds everything.
 
-## Installation
 
-```bash
-curl -sSL day50.dev/ursh | bash
-```
-
-Or build from source:
-
-```bash
-git clone https://github.com/day50-dev/ursh
-cd ursh/cli/cmd/ursh
-go build -o ursh
-```
