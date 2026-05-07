@@ -166,9 +166,7 @@ func run(args []string) error {
 		if err := installScript(scriptPath, parsed.url, parsed.dryRun); err != nil {
 			return err
 		}
-		if !parsed.forceUpdate {
-			return nil
-		}
+		return nil
 	}
 
 	// Handle guard mode
@@ -681,8 +679,8 @@ func listInstalled() {
 	installDir := detectInstallDir()
 
 	lines := strings.Split(string(data), "\n")
-	fmt.Fprintf(os.Stderr, "\n  NAME                 STATUS    DATE         URL\n")
-	fmt.Fprintf(os.Stderr, "  ―――――――――――――――――――――――――――――――――――――――――――――――――――――――\n")
+	fmt.Fprintf(os.Stderr, "\n  NAME                 STATUS    VERSION   DATE         URL\n")
+	fmt.Fprintf(os.Stderr, "  ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――\n")
 
 	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
@@ -695,11 +693,13 @@ func listInstalled() {
 
 		name := parts[0]
 		status := "installed"
+		version := "unknown"
 		date := ""
 		url := ""
 
 		// New format: name checksum date url
 		if len(parts) >= 4 && len(parts[1]) == 64 {
+			version = parts[1][:8]
 			date = parts[2]
 			url = strings.Join(parts[3:], " ")
 
@@ -725,7 +725,7 @@ func listInstalled() {
 			continue
 		}
 
-		fmt.Fprintf(os.Stderr, "  %-20s %-9s %-12s %s\n", name, status, date, url)
+		fmt.Fprintf(os.Stderr, "  %-20s %-9s %-9s %-12s %s\n", name, status, version, date, url)
 	}
 }
 
@@ -1057,8 +1057,10 @@ func updateInstallList(listFile, name, checksum, date, urlStr string) error {
 		}
 		parts := strings.Fields(line)
 		if len(parts) > 0 && parts[0] == name {
-			newLines = append(newLines, entry)
-			found = true
+			if !found {
+				newLines = append(newLines, entry)
+				found = true
+			}
 		} else {
 			newLines = append(newLines, line)
 		}
