@@ -138,6 +138,18 @@ func run(args []string) error {
 	// Normalize URL - add local: protocol prefix for local paths
 	parsed.url = normalizeURL(parsed.url)
 
+	// If it's an update and it's just a name (no protocol/shorthand), try to resolve it from the install list
+	if parsed.forceUpdate && !strings.Contains(parsed.url, "://") &&
+		!strings.HasPrefix(parsed.url, "gh:") &&
+		!strings.HasPrefix(parsed.url, "local:") &&
+		!strings.HasPrefix(parsed.url, "ursh:") {
+		resolvedURL := lookupToolURL(parsed.url)
+		if resolvedURL != "" {
+			logDebug(fmt.Sprintf("Resolved tool name %s to URL %s from install list", parsed.url, resolvedURL))
+			parsed.url = resolvedURL
+		}
+	}
+
 	// Check if this is an ursh: registry lookup
 	if strings.HasPrefix(parsed.url, "ursh:") {
 		return handleUrshRegistry(parsed)
@@ -715,6 +727,41 @@ func listInstalled() {
 
 		fmt.Fprintf(os.Stderr, "  %-20s %-9s %-12s %s\n", name, status, date, url)
 	}
+}
+
+func lookupToolURL(name string) string {
+	cacheDir := detectCacheDir()
+	listFile := filepath.Join(cacheDir, "install-list.txt")
+
+	data, err := os.ReadFile(listFile)
+	if err != nil {
+		return ""
+	}
+
+	lines := strings.Split(string(data), "\n")
+	// Search from bottom to top to get the latest entry if there are duplicates
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := lines[i]
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) == 0 {
+			continue
+		}
+
+		if parts[0] == name {
+			// New format: name checksum date url
+			if len(parts) >= 4 && len(parts[1]) == 64 {
+				return strings.Join(parts[3:], " ")
+			}
+			// Old format: name date url
+			if len(parts) >= 3 {
+				return strings.Join(parts[2:], " ")
+			}
+		}
+	}
+	return ""
 }
 
 func clearCacheDir() {
