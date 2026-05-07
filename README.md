@@ -1,11 +1,9 @@
-# ursh
-
 <p align="center">
-  <img width="460" height="181" alt="logo" src="https://github.com/user-attachments/assets/dd34cef1-1164-4d77-a76e-3d8caf58a233" />
+  <img width="460" alt="logo" src="https://github.com/user-attachments/assets/dd34cef1-1164-4d77-a76e-3d8caf58a233" />
   <br/><strong>Permission-aware shell script execution</strong>
 </p>
 
-**ursh** generates machine-readable permission audits for shell scripts. Instead of blindly running `curl | bash`, ursh analyzes scripts and produces structured permission manifests that can be merged, aggregated, and analyzed—especially useful for understanding transitive dependencies.
+**ursh**, part of the [DAY50](https://day50.dev) suite of open-source tools for AI workflows, generates machine-readable permission audits for shell scripts. Instead of blindly running `curl | bash`, ursh analyzes scripts and produces structured permission manifests that can be merged, aggregated, and analyzed—especially useful for understanding transitive dependencies.
 
 The core use case: when a script has dependencies, you can run audits on each dependency and perform set operations (intersection, union, difference) to understand what permissions are actually needed.
 
@@ -34,6 +32,14 @@ ursh diff --what-new dep-audit.json dep-baudit.json
 
 ```bash
 curl -sSL day50.dev/ursh | bash
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/day50-dev/ursh
+cd ursh/cli/cmd/ursh
+go build -o ursh
 ```
 
 ## Core Concepts
@@ -271,16 +277,4 @@ A: Audits are based on static analysis. For higher confidence, run scripts in a 
 **Q: How do set operations work?**  
 A: File paths are normalized and matched by glob. Network URLs are matched by host pattern. Tools are matched by command name. Intersection finds what appears in all inputs; union finds everything.
 
-## Installation
 
-```bash
-curl -sSL day50.dev/ursh | bash
-```
-
-Or build from source:
-
-```bash
-git clone https://github.com/day50-dev/ursh
-cd ursh/cli/cmd/ursh
-go build -o ursh
-```
